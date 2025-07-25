@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -93,7 +94,12 @@ func runMain(cmd *cobra.Command, args []string) {
 		shortFlags = "-avhPn"
 	}
 
-	rsArgs := []string{shortFlags, "--rsync-path=/bin/rsync", "--ignore-existing", sourceDir, fmt.Sprintf("%s@%s:%s", remoteUser, remoteHost, remotePath)}
+	// Ensure sourceDir ends with a trailing slash for rsync to copy contents, not the directory itself
+	rsyncSource := sourceDir
+	if !strings.HasSuffix(rsyncSource, string(os.PathSeparator)) {
+		rsyncSource += string(os.PathSeparator)
+	}
+	rsArgs := []string{shortFlags, "--rsync-path=/bin/rsync", "--ignore-existing", rsyncSource, fmt.Sprintf("%s@%s:%s", remoteUser, remoteHost, remotePath)}
 	log.Info().Strs("args", rsArgs).Msg("Starting rsync to remote destination...")
 	rsCmd := exec.Command("rsync", rsArgs...)
 	rsCmd.Stdout = os.Stdout
