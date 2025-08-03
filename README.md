@@ -23,14 +23,14 @@ go install github.com/DistroByte/photo-organiser@latest
 ### Basic Example
 
 ```
-photo-organiser --mount-drive "f:" --mount-point /mnt/f --host your.remote.host --remote-path /remote/photos/path
+photo-organiser camera --mount-drive "f:" --mount-point /mnt/f --host your.remote.host --remote-path /remote/photos/path
 ```
 
 - By default, the tool will use `<mount-point>/DCIM` as the source directory, in this case `/mnt/f/DCIM`.
 - To specify a different source directory:
 
 ```
-photo-organiser --mount-drive "f:" --mount-point /mnt/f --source /mnt/f/DCIM/10750715 --host your.remote.host --remote-path /remote/photos/path
+photo-organiser camera --mount-drive "f:" --mount-point /mnt/f --source /mnt/f/DCIM/10750715 --host your.remote.host --remote-path /remote/photos/path
 ```
 
 ### Flags
@@ -47,7 +47,11 @@ photo-organiser --mount-drive "f:" --mount-point /mnt/f --source /mnt/f/DCIM/107
 ### Example Full Command
 
 ```
-photo-organiser --mount-drive "f:" --mount-point /mnt/f --host dionysus.internal --remote-path /volume1/homes/distro/Photos/Sony -v -n
+photo-organiser camera --mount-drive "f:" --mount-point /mnt/f --host dionysus.internal --remote-path /volume1/homes/distro/Photos/Sony -v -n
+```
+
+```
+photo-organiser dji --remote-path /volume1/homes/distro/Photos/DJI --mount-drive "g:" --mount-point /mnt/g --host dionysus.internal -v -n
 ```
 
 ## License
