@@ -40,21 +40,26 @@ func main() {
 	rootCmd.PersistentFlags().BoolVarP(&dryRun, "dry-run", "n", false, "If set, will not move files but print what it would do")
 	rootCmd.PersistentFlags().StringVar(&mountType, "mount-type", "drvfs", "Filesystem type for mounting (drvfs for WSL, vfat/exfat for Linux, leave empty to skip mounting)")
 	rootCmd.PersistentFlags().SortFlags = false
-	rootCmd.MarkPersistentFlagRequired("mount-drive")
-	rootCmd.MarkPersistentFlagRequired("mount-point")
-	rootCmd.MarkPersistentFlagRequired("host")
-	rootCmd.MarkPersistentFlagRequired("remote-path")
 
 	cameraCmd := &cobra.Command{
 		Use:   "camera",
 		Short: "Organise Sony camera photos (default)",
 		Run:   runCameraPhotos,
 	}
+	cameraCmd.MarkPersistentFlagRequired("mount-drive")
+	cameraCmd.MarkPersistentFlagRequired("mount-point")
+	cameraCmd.MarkPersistentFlagRequired("host")
+	cameraCmd.MarkPersistentFlagRequired("remote-path")
+
 	djiCmd := &cobra.Command{
 		Use:   "dji",
 		Short: "Organise DJI camera (action/drone) photos",
 		Run:   runDJIPhotos,
 	}
+	djiCmd.MarkPersistentFlagRequired("mount-drive")
+	djiCmd.MarkPersistentFlagRequired("mount-point")
+	djiCmd.MarkPersistentFlagRequired("host")
+	djiCmd.MarkPersistentFlagRequired("remote-path")
 
 	rootCmd.AddCommand(cameraCmd)
 	rootCmd.AddCommand(djiCmd)
