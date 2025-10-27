@@ -9,7 +9,6 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// cleanupSourceDirs removes all subdirectories in the given sourceDir.
 func cleanupSourceDirs(sourceDir string) error {
 	entries, err := os.ReadDir(sourceDir)
 	if err != nil {
@@ -27,7 +26,6 @@ func cleanupSourceDirs(sourceDir string) error {
 	return nil
 }
 
-// promptAndCleanup prompts the user to confirm cleanup of source directories.
 func promptAndCleanup() {
 	if dryRun {
 		log.Info().Msg("Dry run complete. No files were actually moved or deleted.")

@@ -8,25 +8,35 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// mountDriveIfNeeded mounts the specified drive to the mount point if mountType is set.
 func mountDriveIfNeeded() {
 	if mountType != "" {
 		// Ensure mount point exists
-		if _, err := os.Stat(mountPoint); os.IsNotExist(err) {
-			if err := os.MkdirAll(mountPoint, 0755); err != nil {
-				log.Warn().Err(err).Str("mount_point", mountPoint).Msg("Failed to create mount point directory, retrying with sudo")
-				mkdirCmd := exec.Command("sudo", "mkdir", "-p", mountPoint)
+		if _, err := os.Stat(directory); os.IsNotExist(err) {
+			if err := os.MkdirAll(directory, 0755); err != nil {
+				log.Warn().Err(err).Str("mount_point", directory).Msg("Failed to create mount point directory, retrying with sudo")
+				mkdirCmd := exec.Command("sudo", "mkdir", "-p", directory)
 				mkdirCmd.Stdout = os.Stdout
 				mkdirCmd.Stderr = os.Stderr
 				if err := mkdirCmd.Run(); err != nil {
-					log.Fatal().Err(err).Str("mount_point", mountPoint).Msg("Failed to create mount point directory with sudo")
+					log.Fatal().Err(err).Str("mount_point", directory).Msg("Failed to create mount point directory with sudo")
 				}
-				log.Info().Str("mount_point", mountPoint).Msg("Created mount point directory with sudo")
+				log.Info().Str("mount_point", directory).Msg("Created mount point directory with sudo")
 			}
-			log.Info().Str("mount_point", mountPoint).Msg("Created mount point directory")
+			log.Info().Str("mount_point", directory).Msg("Created mount point directory")
 		}
-		log.Info().Str("drive", mountDrive).Str("mount_point", mountPoint).Str("type", mountType).Msg("Mounting drive")
-		mountCmd := exec.Command("sudo", "mount", "-t", mountType, mountDrive, mountPoint, "-o", fmt.Sprintf("uid=%d,gid=%d,metadata", os.Getuid(), os.Getgid()))
+
+		uid := os.Getuid()
+		gid := os.Getgid()
+		var mountOpts string
+		switch mountType {
+		case "vfat", "exfat", "msdos", "fat":
+			mountOpts = fmt.Sprintf("uid=%d,gid=%d,umask=0022", uid, gid)
+		default:
+			mountOpts = fmt.Sprintf("uid=%d,gid=%d", uid, gid)
+		}
+
+		log.Info().Str("drive", device).Str("mount_point", directory).Str("type", mountType).Msg("Mounting drive")
+		mountCmd := exec.Command("sudo", "mount", "-t", mountType, device, directory, "-o", mountOpts)
 		mountCmd.Stdout = os.Stdout
 		mountCmd.Stderr = os.Stderr
 		if err := mountCmd.Run(); err != nil {
@@ -38,11 +48,10 @@ func mountDriveIfNeeded() {
 	}
 }
 
-// unmountDriveIfNeeded unmounts the drive from the mount point if mountType is set.
 func unmountDriveIfNeeded() {
 	if mountType != "" {
-		log.Info().Str("mount_point", mountPoint).Msg("Unmounting drive")
-		umountCmd := exec.Command("sudo", "umount", mountPoint)
+		log.Info().Str("mount_point", directory).Msg("Unmounting drive")
+		umountCmd := exec.Command("sudo", "umount", "-R", directory)
 		umountCmd.Stdout = os.Stdout
 		umountCmd.Stderr = os.Stderr
 		if err := umountCmd.Run(); err != nil {
