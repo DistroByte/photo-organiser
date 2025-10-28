@@ -1,3 +1,32 @@
+/*
+Photo-organiser is a CLI tool that organises camera photos into a directory structure based on the date they were taken.
+
+Available Commands:
+
+	canon       Organise Canon camera photos
+	completion  Generate the autocompletion script for the specified shell
+	dji         Organise DJI camera (action/drone) photos
+	help        Help about any command
+	sony        Organise Sony camera photos (default)
+	version     Print version information
+
+Flags:
+
+	    --device string        device to mount (default "/dev/sdd1")
+	    --directory string     mount point (default "/dev/camera")
+	-n, --dry-run              will not move files, copy them to the remote, or cleanup source directories
+	-h, --help                 help for photo-organiser
+	    --host string          remote host for rsync
+	    --mount-type string    filesystem type for mounting (default "exfat")
+	    --remote-path string   remote destination path for rsync
+	-s, --source string        source directory containing the photos. (default /mount/point/DCIM)
+	    --user string          remote user for rsync (default "james")
+	-v, --verbose              enable debug logging
+
+Example usage:
+
+	photo-organiser sony --host remote.host --user username --remote-path /path/on/remote
+*/
 package main
 
 import (
@@ -97,13 +126,13 @@ func runCameraPhotos(cmd *cobra.Command, args []string) {
 		sourceDir = filepath.Join(directory, "DCIM")
 		log.Debug().Str("sourceDir", sourceDir).Msg("Inferred sourceDir from mountPoint + /DCIM")
 	}
-	mountDriveIfNeeded()
+	mountDrive()
 	if err := organiseSonyPhotos(sourceDir, dryRun); err != nil {
 		log.Fatal().Err(err).Msg("Failed to organise photos")
 	}
 	rsyncToRemote()
 	promptAndCleanup()
-	unmountDriveIfNeeded()
+	unmountDrive()
 }
 
 func runDJIPhotos(cmd *cobra.Command, args []string) {
@@ -111,13 +140,13 @@ func runDJIPhotos(cmd *cobra.Command, args []string) {
 		sourceDir = filepath.Join(directory, "DCIM", "DJI_001")
 		log.Debug().Str("sourceDir", sourceDir).Msg("Inferred sourceDir for DJI camera")
 	}
-	mountDriveIfNeeded()
+	mountDrive()
 	if err := organiseDJIPhotos(sourceDir, dryRun); err != nil {
 		log.Fatal().Err(err).Msg("Failed to organise DJI photos")
 	}
 	rsyncToRemote()
 	promptAndCleanup()
-	unmountDriveIfNeeded()
+	unmountDrive()
 }
 
 func runCanonPhotos(cmd *cobra.Command, args []string) {
@@ -125,20 +154,17 @@ func runCanonPhotos(cmd *cobra.Command, args []string) {
 		sourceDir = filepath.Join(directory, "DCIM")
 		log.Debug().Str("sourceDir", sourceDir).Msg("Inferred sourceDir from mountPoint + /DCIM")
 	}
-	mountDriveIfNeeded()
+	mountDrive()
 	if err := organiseCanonPhotos(sourceDir, dryRun); err != nil {
 		log.Fatal().Err(err).Msg("Failed to organise photos")
 	}
 	rsyncToRemote()
 	promptAndCleanup()
-	unmountDriveIfNeeded()
+	unmountDrive()
 }
 
+// Run the version command
 func runVersion(cmd *cobra.Command, args []string) {
-	printVersion()
-}
-
-func printVersion() {
 	buildInfo, ok := debug.ReadBuildInfo()
 	if !ok {
 		fmt.Println("Unable to determine version information.")

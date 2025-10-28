@@ -9,6 +9,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// Remove directories that photos have been backed up from
 func cleanupSourceDirs(sourceDir string) error {
 	entries, err := os.ReadDir(sourceDir)
 	if err != nil {
@@ -26,6 +27,7 @@ func cleanupSourceDirs(sourceDir string) error {
 	return nil
 }
 
+// Prompt the user before triggering the cleanup
 func promptAndCleanup() {
 	if dryRun {
 		log.Info().Msg("Dry run complete. No files were actually moved or deleted.")

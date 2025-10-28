@@ -8,7 +8,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func mountDriveIfNeeded() {
+func mountDrive() {
 	if mountType != "" {
 		// Ensure mount point exists
 		if _, err := os.Stat(directory); os.IsNotExist(err) {
@@ -48,7 +48,7 @@ func mountDriveIfNeeded() {
 	}
 }
 
-func unmountDriveIfNeeded() {
+func unmountDrive() {
 	if mountType != "" {
 		log.Info().Str("mount_point", directory).Msg("Unmounting drive")
 		umountCmd := exec.Command("sudo", "umount", "-R", directory)
