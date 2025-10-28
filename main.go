@@ -1,8 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -32,7 +34,7 @@ func main() {
 
 	rootCmd.PersistentFlags().StringVar(&device, "device", "/dev/sdd1", "device to mount")
 	rootCmd.PersistentFlags().StringVar(&directory, "directory", "/dev/camera", "mount point")
-	rootCmd.PersistentFlags().StringVarP(&sourceDir, "source", "", "", "source directory containing the photos. (default /mount/point/DCIM)")
+	rootCmd.PersistentFlags().StringVarP(&sourceDir, "source", "s", "", "source directory containing the photos. (default /mount/point/DCIM)")
 	rootCmd.PersistentFlags().StringVar(&remoteUser, "user", os.Getenv("USER"), "remote user for rsync")
 	rootCmd.PersistentFlags().StringVar(&remoteHost, "host", "", "remote host for rsync")
 	rootCmd.PersistentFlags().StringVar(&remotePath, "remote-path", "", "remote destination path for rsync")
@@ -71,9 +73,16 @@ func main() {
 	canonCmd.MarkPersistentFlagRequired("host")
 	canonCmd.MarkPersistentFlagRequired("remote-path")
 
+	versionCmd := &cobra.Command{
+		Use:   "version",
+		Short: "Print version information",
+		Run:   runVersion,
+	}
+
 	rootCmd.AddCommand(sonyCmd)
 	rootCmd.AddCommand(djiCmd)
 	rootCmd.AddCommand(canonCmd)
+	rootCmd.AddCommand(versionCmd)
 	rootCmd.Run = func(cmd *cobra.Command, args []string) {
 		_ = cmd.Help()
 	}
@@ -123,4 +132,22 @@ func runCanonPhotos(cmd *cobra.Command, args []string) {
 	rsyncToRemote()
 	promptAndCleanup()
 	unmountDriveIfNeeded()
+}
+
+func runVersion(cmd *cobra.Command, args []string) {
+	printVersion()
+}
+
+func printVersion() {
+	buildInfo, ok := debug.ReadBuildInfo()
+	if !ok {
+		fmt.Println("Unable to determine version information.")
+		return
+	}
+
+	if buildInfo.Main.Version != "" {
+		fmt.Printf("photo-organiser version %s\n", buildInfo.Main.Version)
+	} else {
+		fmt.Println("photo-organiser version unknown")
+	}
 }
