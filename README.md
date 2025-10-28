@@ -1,6 +1,6 @@
 # photo-organiser
 
-Organise Sony camera photos into a date-based directory structure and sync them to a remote server.
+Organise camera photos into a date-based directories and sync them to a remote server with rsync.
 
 ## Installation
 
@@ -23,35 +23,34 @@ go install github.com/DistroByte/photo-organiser@latest
 ### Basic Example
 
 ```
-photo-organiser camera --mount-drive "f:" --mount-point /mnt/f --host your.remote.host --remote-path /remote/photos/path
+photo-organiser sony --device /dev/sdd1 --host remote.host --user username --remote-path /path/on/remote
 ```
 
-- By default, the tool will use `<mount-point>/DCIM` as the source directory, in this case `/mnt/f/DCIM`.
-- To specify a different source directory:
+By default, the tool will use `<mount-point>/DCIM` as the source directory, in this case `/mnt/camera/DCIM`. To specify a different source directory:
 
 ```
-photo-organiser camera --mount-drive "f:" --mount-point /mnt/f --source /mnt/f/DCIM/10750715 --host your.remote.host --remote-path /remote/photos/path
+photo-organiser sony --device /dev/sdd1 --directory /mnt/camera --source /mnt/camera/DCIM/10750715 --host remote.host --remote-path /remote/photos/path
 ```
 
 ### Flags
 
-- `--mount-drive` (required): Drive to mount (e.g., `f:`)
-- `--mount-point` (required): Mount point (e.g., `/mnt/f`)
-- `--source`, `-s`: Source directory containing the photos (defaults to `/mount/point/DCIM`)
-- `--host` (required): Remote host for `rsync`
-- `--remote-path` (required): Remote destination path for `rsync`
-- `--user`: Remote user for `rsync` (defaults to current user)
-- `--dry-run`, `-n`: Preview actions without making changes
-- `--verbose`, `-v`: Enable debug logging
+```
+      --device string        device to mount (default "/dev/sdd1")
+      --directory string     mount point (default "/dev/camera")
+  -n, --dry-run              will not move files, copy them to the remote, or cleanup source directories
+  -h, --help                 help for photo-organiser
+      --host string          remote host for rsync
+      --mount-type string    filesystem type for mounting (default "exfat")
+      --remote-path string   remote destination path for rsync
+      --source string        source directory containing the photos. (default /mount/point/DCIM)
+      --user string          remote user for rsync (default "$USER")
+  -v, --verbose              enable debug logging
+```
 
 ### Example Full Command
 
 ```
-photo-organiser camera --mount-drive "f:" --mount-point /mnt/f --host dionysus.internal --remote-path /volume1/homes/distro/Photos/Sony -v -n
-```
-
-```
-photo-organiser dji --remote-path /volume1/homes/distro/Photos/DJI --mount-drive "g:" --mount-point /mnt/g --host dionysus.internal -v -n
+photo-organiser sony --device /dev/sdd1 --directory /mnt/camera --host dionysus.internal --user distro --remote-path /volume1/homes/distro/Photos/Sony
 ```
 
 ## License

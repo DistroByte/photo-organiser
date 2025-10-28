@@ -30,15 +30,15 @@ func main() {
 		Long:  `photo-organiser is a CLI tool that organises camera photos into a directory structure based on the date they were taken.`,
 	}
 
-	rootCmd.PersistentFlags().StringVar(&device, "device", "", "Drive to mount (e.g. f:)")
-	rootCmd.PersistentFlags().StringVar(&directory, "directory", "/dev/sdd", "Mount point (e.g. /mnt/f)")
-	rootCmd.PersistentFlags().StringVarP(&sourceDir, "source", "", "", "Source directory containing the photos, defaults to /mount/point/DCIM")
-	rootCmd.PersistentFlags().StringVar(&remoteUser, "user", os.Getenv("USER"), "Remote user for rsync, defaults to current user")
-	rootCmd.PersistentFlags().StringVar(&remoteHost, "host", "", "Remote host for rsync")
-	rootCmd.PersistentFlags().StringVar(&remotePath, "remote-path", "", "Remote destination path for rsync")
-	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable debug logging")
-	rootCmd.PersistentFlags().BoolVarP(&dryRun, "dry-run", "n", false, "If set, will not move files but print what it would do")
-	rootCmd.PersistentFlags().StringVar(&mountType, "mount-type", "exfat", "Filesystem type for mounting (drvfs for WSL, vfat/exfat for Linux, leave empty to skip mounting)")
+	rootCmd.PersistentFlags().StringVar(&device, "device", "/dev/sdd1", "device to mount")
+	rootCmd.PersistentFlags().StringVar(&directory, "directory", "/dev/camera", "mount point")
+	rootCmd.PersistentFlags().StringVarP(&sourceDir, "source", "", "", "source directory containing the photos. (default /mount/point/DCIM)")
+	rootCmd.PersistentFlags().StringVar(&remoteUser, "user", os.Getenv("USER"), "remote user for rsync")
+	rootCmd.PersistentFlags().StringVar(&remoteHost, "host", "", "remote host for rsync")
+	rootCmd.PersistentFlags().StringVar(&remotePath, "remote-path", "", "remote destination path for rsync")
+	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "enable debug logging")
+	rootCmd.PersistentFlags().BoolVarP(&dryRun, "dry-run", "n", false, "will not move files, copy them to the remote, or cleanup source directories")
+	rootCmd.PersistentFlags().StringVar(&mountType, "mount-type", "exfat", "filesystem type for mounting")
 	rootCmd.PersistentFlags().SortFlags = false
 
 	sonyCmd := &cobra.Command{
