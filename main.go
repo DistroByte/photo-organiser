@@ -72,6 +72,8 @@ func main() {
 	rootCmd.PersistentFlags().StringVar(&mountType, "mount-type", "exfat", "filesystem type for mounting")
 	rootCmd.PersistentFlags().SortFlags = false
 
+	setLogLevel()
+
 	sonyCmd := &cobra.Command{
 		Use:   "sony",
 		Short: "Organise Sony camera photos (default)",
@@ -175,5 +177,13 @@ func runVersion(cmd *cobra.Command, args []string) {
 		fmt.Printf("photo-organiser version %s\n", buildInfo.Main.Version)
 	} else {
 		fmt.Println("photo-organiser version unknown")
+	}
+}
+
+func setLogLevel() {
+	if verbose {
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	} else {
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
 	}
 }
