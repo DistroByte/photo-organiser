@@ -1,5 +1,8 @@
 # photo-organiser
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/DistroByte/photo-organiser.svg)](https://pkg.go.dev/github.com/DistroByte/photo-organiser)
+[![Go Report Card](https://goreportcard.com/badge/github.com/DistroByte/photo-organiser)](https://goreportcard.com/report/github.com/DistroByte/photo-organiser)
+
 Organise camera photos into a date-based directories and sync them to a remote server with rsync.
 
 ## Installation
