@@ -24,8 +24,8 @@ func rsyncToRemote() {
 		shortFlags,
 		"--ignore-existing",
 		"--rsync-path=/bin/rsync",
-		"--exclude 'CANONMSC'",
-		"--exclude '100CANON'",
+		"--exclude", "CANONMSC",
+		"--exclude", "100CANON",
 		rsyncSource,
 		fmt.Sprintf("%s@%s:%s", remoteUser, remoteHost, remotePath),
 	}
