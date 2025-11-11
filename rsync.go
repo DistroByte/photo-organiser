@@ -21,16 +21,17 @@ func rsyncToRemote() {
 		rsyncSource += string(os.PathSeparator)
 	}
 	rsArgs := []string{
-		shortFlags,
-		"--ignore-existing",
 		"--rsync-path=/bin/rsync",
 		"--exclude", "CANONMSC",
 		"--exclude", "100CANON",
+		"--ignore-existing",
+		"--info=none,progress2",
+		shortFlags,
 		rsyncSource,
 		fmt.Sprintf("%s@%s:%s", remoteUser, remoteHost, remotePath),
 	}
 
-	log.Info().Strs("args", rsArgs).Msg("Starting rsync to remote destination...")
+	log.Info().Str("source", rsArgs[len(rsArgs)-2]).Str("dest", rsArgs[len(rsArgs)-1]).Msg("Starting rsync from source to destination")
 	rsCmd := exec.Command("rsync", rsArgs...)
 	rsCmd.Stdout = os.Stdout
 	rsCmd.Stderr = os.Stderr
