@@ -13,13 +13,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version: "1.26"
+
       - name: Build
         run: |
           go build -v -o photo-organiser
+
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v2
         with:
