@@ -11,9 +11,9 @@ import (
 
 // rsyncToRemote runs rsync to copy files from the source directory to the remote destination.
 func rsyncToRemote() {
-	shortFlags := "-avhPz"
+	flags := "--archive --verbose --human-readable"
 	if dryRun {
-		shortFlags = "-avhPzn"
+		flags = flags + " --dry-run"
 	}
 	// Ensure sourceDir ends with a trailing slash for rsync to copy contents, not the directory itself
 	rsyncSource := sourceDir
@@ -26,7 +26,7 @@ func rsyncToRemote() {
 		"--exclude", "100CANON",
 		"--ignore-existing",
 		"--info=none,progress2",
-		shortFlags,
+		flags,
 		rsyncSource,
 		fmt.Sprintf("%s@%s:%s", remoteUser, remoteHost, remotePath),
 	}
