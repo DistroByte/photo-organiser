@@ -11,25 +11,23 @@ import (
 
 // rsyncToRemote runs rsync to copy files from the source directory to the remote destination.
 func rsyncToRemote() {
-	flags := "--archive --verbose --human-readable"
+	flags := []string{"--archive", "--verbose", "--human-readable"}
 	if dryRun {
-		flags = flags + " --dry-run"
+		flags = append(flags, "--dry-run")
 	}
 	// Ensure sourceDir ends with a trailing slash for rsync to copy contents, not the directory itself
 	rsyncSource := sourceDir
 	if !strings.HasSuffix(rsyncSource, string(os.PathSeparator)) {
 		rsyncSource += string(os.PathSeparator)
 	}
-	rsArgs := []string{
+	rsArgs := append([]string{
 		"--rsync-path=/bin/rsync",
 		"--exclude", "CANONMSC",
 		"--exclude", "100CANON",
 		"--ignore-existing",
 		"--info=none,progress2",
-		flags,
-		rsyncSource,
-		fmt.Sprintf("%s@%s:%s", remoteUser, remoteHost, remotePath),
-	}
+		"--chmod=ugo=rwX"}, flags...)
+	rsArgs = append(rsArgs, rsyncSource, fmt.Sprintf("%s@%s:%s", remoteUser, remoteHost, remotePath))
 
 	log.Info().Str("source", rsArgs[len(rsArgs)-2]).Str("dest", rsArgs[len(rsArgs)-1]).Msg("Starting rsync from source to destination")
 	rsCmd := exec.Command("rsync", rsArgs...)

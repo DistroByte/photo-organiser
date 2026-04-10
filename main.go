@@ -1,5 +1,5 @@
 /*
-Photo-organiser is a CLI tool that organises camera photos into a directory structure based on the date they were taken.
+photo-organiser is a CLI tool that organises camera photos into a directory structure based on the date they were taken.
 
 Available Commands:
 
@@ -8,6 +8,7 @@ Available Commands:
 	dji         Organise DJI camera (action/drone) photos
 	help        Help about any command
 	sony        Organise Sony camera photos (default)
+	sync        Trigger an immich sync
 	version     Print version information
 
 Flags:
@@ -30,7 +31,10 @@ Example usage:
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -41,16 +45,25 @@ import (
 )
 
 var (
-	sourceDir  string
-	dryRun     bool
-	verbose    bool
-	remoteUser string
-	remoteHost string
-	remotePath string
-	device     string
-	directory  string
-	mountType  string
+	sourceDir     string
+	dryRun        bool
+	verbose       bool
+	remoteUser    string
+	remoteHost    string
+	remotePath    string
+	device        string
+	directory     string
+	mountType     string
+	immichLibrary string
+	immichKey     string
+	immichServer  string
 )
+
+type ImmichError struct {
+	Message    string `json:"message"`
+	ErrType    string `json:"error"`
+	StatusCode int    `json:"statusCode"`
+}
 
 func main() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
@@ -59,6 +72,14 @@ func main() {
 		Use:   "photo-organiser",
 		Short: "Organise camera photos into a directory structure based on the date they were taken.",
 		Long:  `photo-organiser is a CLI tool that organises camera photos into a directory structure based on the date they were taken.`,
+
+		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			if verbose {
+				zerolog.SetGlobalLevel(zerolog.DebugLevel)
+			} else {
+				zerolog.SetGlobalLevel(zerolog.InfoLevel)
+			}
+		},
 	}
 
 	rootCmd.PersistentFlags().StringVar(&device, "device", "/dev/sdd1", "device to mount")
@@ -71,8 +92,6 @@ func main() {
 	rootCmd.PersistentFlags().BoolVarP(&dryRun, "dry-run", "n", false, "will not move files, copy them to the remote, or cleanup source directories")
 	rootCmd.PersistentFlags().StringVar(&mountType, "mount-type", "exfat", "filesystem type for mounting")
 	rootCmd.PersistentFlags().SortFlags = false
-
-	setLogLevel()
 
 	sonyCmd := &cobra.Command{
 		Use:   "sony",
@@ -104,6 +123,18 @@ func main() {
 	canonCmd.MarkPersistentFlagRequired("host")
 	canonCmd.MarkPersistentFlagRequired("remote-path")
 
+	syncCmd := &cobra.Command{
+		Use:   "sync",
+		Short: "Trigger an immich sync",
+		Run:   runSyncCmd,
+	}
+	syncCmd.Flags().StringVar(&immichLibrary, "library", "", "library to trigger a scan on")
+	syncCmd.Flags().StringVar(&immichKey, "key", "", "immich api key")
+	syncCmd.Flags().StringVar(&immichServer, "server", "", "immich api base url")
+	syncCmd.MarkFlagRequired("library")
+	syncCmd.MarkFlagRequired("key")
+	syncCmd.MarkFlagRequired("server")
+
 	versionCmd := &cobra.Command{
 		Use:   "version",
 		Short: "Print version information",
@@ -113,6 +144,7 @@ func main() {
 	rootCmd.AddCommand(sonyCmd)
 	rootCmd.AddCommand(djiCmd)
 	rootCmd.AddCommand(canonCmd)
+	rootCmd.AddCommand(syncCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.Run = func(cmd *cobra.Command, args []string) {
 		_ = cmd.Help()
@@ -165,7 +197,6 @@ func runCanonPhotos(cmd *cobra.Command, args []string) {
 	unmountDrive()
 }
 
-// Run the version command
 func runVersion(cmd *cobra.Command, args []string) {
 	buildInfo, ok := debug.ReadBuildInfo()
 	if !ok {
@@ -180,10 +211,50 @@ func runVersion(cmd *cobra.Command, args []string) {
 	}
 }
 
-func setLogLevel() {
-	if verbose {
-		zerolog.SetGlobalLevel(zerolog.DebugLevel)
-	} else {
-		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+func runSyncCmd(cmd *cobra.Command, args []string) {
+	url := immichServer + "/libraries/" + immichLibrary + "/scan"
+	log.Debug().Str("url", url).Msg("Making request to server")
+	client := &http.Client{}
+	req, err := http.NewRequest("POST", url, nil)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to create http request")
 	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", immichKey)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to perform http request")
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 204 {
+		var apiErr ImmichError
+		if err := json.Unmarshal(bodyBytes, &apiErr); err == nil {
+			log.Fatal().
+				Int("status", apiErr.StatusCode).
+				Str("url", url).
+				Str("error", apiErr.Message).
+				Err(&apiErr).
+				Msg("Failed to trigger scan")
+		} else {
+			// fallback if response isn't the expected JSON
+			log.Fatal().
+				Int("status", resp.StatusCode).
+				Str("url", url).
+				Str("http_body", string(bodyBytes)).
+				Msg("Failed to trigger scan")
+		}
+	}
+
+	log.Info().Msg("sync triggered successfully")
+}
+
+func (e *ImmichError) Error() string {
+	if e == nil {
+		return ""
+	}
+	return e.Message
 }
