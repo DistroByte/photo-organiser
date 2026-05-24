@@ -17,180 +17,213 @@ var sonyFolderNameRegex = regexp.MustCompile(`^\d{8}$`)
 var djiFilenameRegex = regexp.MustCompile(`^DJI_(\d{4})(\d{2})(\d{2})\d{6}_\d+_\w\..+$`)
 var isoDateRegex = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
 
-func organiseSonyPhotos(sourceDir string, dryRun bool) error {
-	log.Info().Str("source", sourceDir).Bool("dry-run", dryRun).Msg("Starting photo organisation")
-	dirsToRemove := make(map[string]struct{})
-	err := filepath.WalkDir(sourceDir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() && path == sourceDir || d.IsDir() {
-			return err
-		}
-		rel, err := filepath.Rel(sourceDir, path)
-		if err != nil {
-			return err
-		}
-		parentDir := filepath.Base(filepath.Dir(rel))
-		if !sonyFolderNameRegex.MatchString(parentDir) {
-			return nil
-		}
-		destDirName, err := calculateDestinationDir(parentDir)
-		if err != nil {
-			return err
-		}
-		destPath := filepath.Join(sourceDir, destDirName, filepath.Base(path))
-		dirsToRemove[filepath.Join(sourceDir, parentDir)] = struct{}{}
-		log.Debug().Str("source", path).Str("destination", destPath).Bool("dry-run", dryRun).Msg("Processing file")
-		if dryRun {
-			log.Info().Str("source", path).Str("destination", destPath).Bool("dry-run", true).Msg("Would move file")
-			return nil
-		}
-		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
-			return err
-		}
-		if err := os.Rename(path, destPath); err != nil {
-			return fmt.Errorf("failed to move file %s to %s: %w", path, destPath, err)
-		}
-		log.Info().Str("source", path).Str("destination", destPath).Bool("dry-run", false).Msg("File moved successfully")
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-	log.Debug().Any("directories", dirsToRemove).Msg("Checking for empty directories to remove")
-	for dir := range dirsToRemove {
-		if dryRun {
-			log.Info().Str("dir", dir).Bool("dry-run", true).Msg("Would remove directory if empty")
-			continue
-		}
-		entries, err := os.ReadDir(dir)
-		if err == nil && len(entries) == 0 {
-			if err := os.Remove(dir); err != nil {
-				log.Warn().Str("dir", dir).Err(err).Bool("dry-run", false).Msg("Failed to remove directory")
-			} else {
-				log.Info().Str("dir", dir).Bool("dry-run", false).Msg("Removed empty directory")
-			}
-		}
-	}
-	return nil
+// dateGroup holds the rsync source and file list for one date's worth of photos.
+type dateGroup struct {
+	sourceDir string   // absolute path used as the rsync source root
+	files     []string // paths relative to sourceDir; nil means sync the whole directory
+	date      string   // "YYYY-MM-DD"
 }
 
-func organiseDJIPhotos(sourceDir string, dryRun bool) error {
-	log.Info().Str("source", sourceDir).Bool("dry-run", dryRun).Msg("Starting DJI action photo organisation")
-	return filepath.WalkDir(sourceDir, func(path string, d fs.DirEntry, err error) error {
+func groupSonyByDate(sourceDir string) ([]dateGroup, error) {
+	entries, err := os.ReadDir(sourceDir)
+	if err != nil {
+		return nil, err
+	}
+	var groups []dateGroup
+	for _, entry := range entries {
+		if !entry.IsDir() || !sonyFolderNameRegex.MatchString(entry.Name()) {
+			continue
+		}
+		date, err := calculateDestinationDir(entry.Name())
+		if err != nil {
+			log.Warn().Str("dir", entry.Name()).Err(err).Msg("skipping directory with unparseable name")
+			continue
+		}
+		groups = append(groups, dateGroup{
+			sourceDir: filepath.Join(sourceDir, entry.Name()),
+			date:      date,
+		})
+	}
+	return groups, nil
+}
+
+func groupDJIByDate(sourceDir string) ([]dateGroup, error) {
+	byDate := make(map[string][]string)
+	err := filepath.WalkDir(sourceDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
 		}
 		base := filepath.Base(path)
 		matches := djiFilenameRegex.FindStringSubmatch(base)
 		if matches == nil {
-			log.Debug().Str("file", base).Msg("Skipping non-DJI file")
+			log.Debug().Str("file", base).Msg("skipping non-DJI file")
 			return nil
 		}
-		year, month, day := matches[1], matches[2], matches[3]
-		destDir := filepath.Join(sourceDir, fmt.Sprintf("%s-%s-%s", year, month, day))
-		destPath := filepath.Join(destDir, base)
-		log.Debug().Str("source", path).Str("destination", destPath).Bool("dry-run", dryRun).Msg("Processing DJI file")
-		if dryRun {
-			log.Info().Str("source", path).Str("destination", destPath).Bool("dry-run", true).Msg("Would move file")
-			return nil
-		}
-		if err := os.MkdirAll(destDir, 0755); err != nil {
+		date := fmt.Sprintf("%s-%s-%s", matches[1], matches[2], matches[3])
+		rel, err := filepath.Rel(sourceDir, path)
+		if err != nil {
 			return err
 		}
-		if err := os.Rename(path, destPath); err != nil {
-			return fmt.Errorf("failed to move file %s to %s: %w", path, destPath, err)
-		}
-		log.Info().Str("source", path).Str("destination", destPath).Bool("dry-run", false).Msg("File moved successfully")
+		byDate[date] = append(byDate[date], rel)
 		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
+	return dateGroupsFromMap(sourceDir, byDate), nil
 }
 
-func organiseCanonPhotos(sourceDir string, dryRun bool) error {
-	log.Info().Str("source", sourceDir).Bool("dry-run", dryRun).Msg("Starting Canon photo organisation")
-	return filepath.WalkDir(sourceDir, func(path string, d fs.DirEntry, err error) error {
+func groupCanonByDate(sourceDir string) ([]dateGroup, error) {
+	type key struct{ dir, date string }
+	byDirDate := make(map[key][]string)
+
+	err := filepath.WalkDir(sourceDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || path == sourceDir {
+			return err
+		}
+		rel, err := filepath.Rel(sourceDir, path)
 		if err != nil {
 			return err
 		}
 
-		rel, relErr := filepath.Rel(sourceDir, path)
-		if relErr != nil {
-			return relErr
-		}
-		baseRel := filepath.Base(rel)
-
-		// skip descending into date destination directories
-		if d.IsDir() && isoDateRegex.MatchString(baseRel) {
+		if d.IsDir() && isoDateRegex.MatchString(filepath.Base(rel)) {
 			return fs.SkipDir
 		}
 		if d.IsDir() {
 			return nil
 		}
 
-		parentDir := filepath.Base(filepath.Dir(rel))
-		if isoDateRegex.MatchString(parentDir) {
-			log.Debug().Str("file", path).Str("parent", parentDir).Msg("Skipping file already in date folder")
-			return nil
-		}
-
-		// Skip CANONMSC directories (case-insensitive)
-		relSlash := filepath.ToSlash(rel)
-		parts := strings.Split(relSlash, "/")
-		for _, p := range parts {
-			if strings.EqualFold(p, "CANONMSC") {
-				log.Debug().Str("file", path).Msg("Skipping file in CANONMSC directory")
+		for _, part := range strings.Split(filepath.ToSlash(rel), "/") {
+			if strings.EqualFold(part, "CANONMSC") {
 				return nil
 			}
 		}
 
-		// Try EXIF date
-		var taken time.Time
-		f, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-
-		x, exifErr := exif.Decode(f)
-		if exifErr == nil {
-			if dt, dtErr := x.DateTime(); dtErr == nil {
-				taken = dt
-			}
-		}
-
-		// Fallback to file mod time
-		if taken.IsZero() {
-			info, statErr := os.Stat(path)
-			if statErr != nil {
-				return statErr
-			}
-			taken = info.ModTime()
-		}
-
-		destDir := filepath.Join(sourceDir, taken.Format("2006-01-02"))
-		destPath := filepath.Join(destDir, filepath.Base(path))
-
-		log.Debug().Str("source", path).Str("destination", destPath).Bool("dry-run", dryRun).Msg("Processing file")
-		if dryRun {
-			log.Info().Str("source", path).Str("destination", destPath).Bool("dry-run", true).Msg("Would move file")
+		if isoDateRegex.MatchString(filepath.Base(filepath.Dir(rel))) {
 			return nil
 		}
 
-		if err := os.MkdirAll(destDir, 0o755); err != nil {
-			return err
+		taken, err := photoDate(path)
+		if err != nil {
+			log.Warn().Str("file", path).Err(err).Msg("skipping file: cannot determine date")
+			return nil
 		}
-		if err := os.Rename(path, destPath); err != nil {
-			return fmt.Errorf("failed to move file %s to %s: %w", path, destPath, err)
-		}
-		log.Info().Str("source", path).Str("destination", destPath).Msg("File moved successfully")
+
+		parentDir := filepath.Dir(path)
+		k := key{dir: parentDir, date: taken.Format("2006-01-02")}
+		byDirDate[k] = append(byDirDate[k], filepath.Base(path))
 		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	groups := make([]dateGroup, 0, len(byDirDate))
+	for k, files := range byDirDate {
+		groups = append(groups, dateGroup{
+			sourceDir: k.dir,
+			files:     files,
+			date:      k.date,
+		})
+	}
+	return groups, nil
+}
+
+func groupCharmeraByDate(sourceDir string) ([]dateGroup, error) {
+	byDate := make(map[string][]string)
+	entries, err := os.ReadDir(sourceDir)
+	if err != nil {
+		return nil, err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		ext := strings.ToLower(filepath.Ext(name))
+		if ext != ".jpg" && ext != ".jpeg" && ext != ".avi" {
+			continue
+		}
+
+		var taken time.Time
+		if ext == ".avi" {
+			info, err := entry.Info()
+			if err != nil {
+				return nil, err
+			}
+			taken = info.ModTime()
+		} else {
+			taken, err = photoDate(filepath.Join(sourceDir, name))
+			if err != nil {
+				log.Warn().Str("file", name).Err(err).Msg("falling back to mtime for date")
+				info, statErr := entry.Info()
+				if statErr != nil {
+					return nil, statErr
+				}
+				taken = info.ModTime()
+			}
+		}
+
+		date := taken.Format("2006-01-02")
+		byDate[date] = append(byDate[date], name)
+	}
+	return dateGroupsFromMap(sourceDir, byDate), nil
+}
+
+// photoDate returns the date a photo was taken, preferring EXIF over mtime.
+func photoDate(path string) (time.Time, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return time.Time{}, err
+	}
+	defer f.Close()
+
+	x, err := exif.Decode(f)
+	if err == nil {
+		if tag, tagErr := x.Get(exif.DateTimeOriginal); tagErr == nil {
+			raw := strings.Trim(tag.String(), `"`)
+			if t, parseErr := parseEXIFDate(raw); parseErr == nil {
+				return t, nil
+			}
+		}
+		if t, dtErr := x.DateTime(); dtErr == nil {
+			return t, nil
+		}
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return info.ModTime(), nil
+}
+
+// parseEXIFDate handles both the standard EXIF format ("2006:01:02 15:04:05") and
+// the all-colon variant some cameras write ("2006:01:02:15:04:05").
+func parseEXIFDate(raw string) (time.Time, error) {
+	if t, err := time.Parse("2006:01:02 15:04:05", raw); err == nil {
+		return t, nil
+	}
+	return time.Parse("2006:01:02:15:04:05", raw)
+}
+
+func dateGroupsFromMap(sourceDir string, byDate map[string][]string) []dateGroup {
+	groups := make([]dateGroup, 0, len(byDate))
+	for date, files := range byDate {
+		groups = append(groups, dateGroup{
+			sourceDir: sourceDir,
+			files:     files,
+			date:      date,
+		})
+	}
+	return groups
 }
 
 func calculateDestinationDir(dirName string) (string, error) {
 	if len(dirName) < 8 {
 		return "", fmt.Errorf("directory name %s is too short to determine date", dirName)
 	}
-	currentYear := time.Now().Year()
-	currentYearStr := fmt.Sprintf("%d", currentYear)
+	currentYearStr := fmt.Sprintf("%d", time.Now().Year())
 	year := currentYearStr[:3] + dirName[3:4]
 	month := dirName[4:6]
 	day := dirName[6:8]

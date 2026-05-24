@@ -123,6 +123,16 @@ func main() {
 	canonCmd.MarkPersistentFlagRequired("host")
 	canonCmd.MarkPersistentFlagRequired("remote-path")
 
+	charmeraCmd := &cobra.Command{
+		Use:   "charmera",
+		Short: "Organise Kodak Charmera keychain camera photos",
+		Run:   runCharmeraPhotos,
+	}
+	charmeraCmd.MarkPersistentFlagRequired("device")
+	charmeraCmd.MarkPersistentFlagRequired("directory")
+	charmeraCmd.MarkPersistentFlagRequired("host")
+	charmeraCmd.MarkPersistentFlagRequired("remote-path")
+
 	syncCmd := &cobra.Command{
 		Use:   "sync",
 		Short: "Trigger an immich sync",
@@ -144,6 +154,7 @@ func main() {
 	rootCmd.AddCommand(sonyCmd)
 	rootCmd.AddCommand(djiCmd)
 	rootCmd.AddCommand(canonCmd)
+	rootCmd.AddCommand(charmeraCmd)
 	rootCmd.AddCommand(syncCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.Run = func(cmd *cobra.Command, args []string) {
@@ -158,13 +169,14 @@ func main() {
 func runCameraPhotos(cmd *cobra.Command, args []string) {
 	if sourceDir == "" {
 		sourceDir = filepath.Join(directory, "DCIM")
-		log.Debug().Str("sourceDir", sourceDir).Msg("Inferred sourceDir from mountPoint + /DCIM")
+		log.Debug().Str("sourceDir", sourceDir).Msg("inferred sourceDir from mount point + /DCIM")
 	}
 	mountDrive()
-	if err := organiseSonyPhotos(sourceDir, dryRun); err != nil {
-		log.Fatal().Err(err).Msg("Failed to organise photos")
+	groups, err := groupSonyByDate(sourceDir)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to group Sony photos by date")
 	}
-	rsyncToRemote()
+	rsyncByDate(groups)
 	promptAndCleanup()
 	unmountDrive()
 }
@@ -172,28 +184,45 @@ func runCameraPhotos(cmd *cobra.Command, args []string) {
 func runDJIPhotos(cmd *cobra.Command, args []string) {
 	if sourceDir == "" {
 		sourceDir = filepath.Join(directory, "DCIM", "DJI_001")
-		log.Debug().Str("sourceDir", sourceDir).Msg("Inferred sourceDir for DJI camera")
+		log.Debug().Str("sourceDir", sourceDir).Msg("inferred sourceDir for DJI camera")
 	}
 	mountDrive()
-	if err := organiseDJIPhotos(sourceDir, dryRun); err != nil {
-		log.Fatal().Err(err).Msg("Failed to organise DJI photos")
+	groups, err := groupDJIByDate(sourceDir)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to group DJI photos by date")
 	}
-	rsyncToRemote()
-	promptAndCleanup()
+	rsyncByDate(groups)
+	promptAndCleanupFlat()
 	unmountDrive()
 }
 
 func runCanonPhotos(cmd *cobra.Command, args []string) {
 	if sourceDir == "" {
 		sourceDir = filepath.Join(directory, "DCIM")
-		log.Debug().Str("sourceDir", sourceDir).Msg("Inferred sourceDir from mountPoint + /DCIM")
+		log.Debug().Str("sourceDir", sourceDir).Msg("inferred sourceDir from mount point + /DCIM")
 	}
 	mountDrive()
-	if err := organiseCanonPhotos(sourceDir, dryRun); err != nil {
-		log.Fatal().Err(err).Msg("Failed to organise photos")
+	groups, err := groupCanonByDate(sourceDir)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to group Canon photos by date")
 	}
-	rsyncToRemote()
+	rsyncByDate(groups)
 	promptAndCleanup()
+	unmountDrive()
+}
+
+func runCharmeraPhotos(cmd *cobra.Command, args []string) {
+	if sourceDir == "" {
+		sourceDir = filepath.Join(directory, "DCIM")
+		log.Debug().Str("sourceDir", sourceDir).Msg("inferred sourceDir from mount point + /DCIM")
+	}
+	mountDrive()
+	groups, err := groupCharmeraByDate(sourceDir)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to group Charmera photos by date")
+	}
+	rsyncByDate(groups)
+	promptAndCleanupFlat()
 	unmountDrive()
 }
 
