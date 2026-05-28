@@ -213,8 +213,8 @@ func runCanonPhotos(cmd *cobra.Command, args []string) {
 
 func runCharmeraPhotos(cmd *cobra.Command, args []string) {
 	if sourceDir == "" {
-		sourceDir = filepath.Join(directory, "DCIM")
-		log.Debug().Str("sourceDir", sourceDir).Msg("inferred sourceDir from mount point + /DCIM")
+		sourceDir = directory
+		log.Debug().Str("sourceDir", sourceDir).Msg("inferred sourceDir from mount point root")
 	}
 	mountDrive()
 	groups, err := groupCharmeraByDate(sourceDir)
