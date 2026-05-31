@@ -179,6 +179,10 @@ func runCameraPhotos(cmd *cobra.Command, args []string) {
 	rsyncByDate(groups)
 	promptAndCleanup()
 	unmountDrive()
+
+	if immichKey != "" && immichServer != "" && immichLibrary != "" {
+		triggerSync()
+	}
 }
 
 func runDJIPhotos(cmd *cobra.Command, args []string) {
@@ -194,6 +198,10 @@ func runDJIPhotos(cmd *cobra.Command, args []string) {
 	rsyncByDate(groups)
 	promptAndCleanupFlat()
 	unmountDrive()
+
+	if immichKey != "" && immichServer != "" && immichLibrary != "" {
+		triggerSync()
+	}
 }
 
 func runCanonPhotos(cmd *cobra.Command, args []string) {
@@ -209,6 +217,10 @@ func runCanonPhotos(cmd *cobra.Command, args []string) {
 	rsyncByDate(groups)
 	promptAndCleanup()
 	unmountDrive()
+
+	if immichKey != "" && immichServer != "" && immichLibrary != "" {
+		triggerSync()
+	}
 }
 
 func runCharmeraPhotos(cmd *cobra.Command, args []string) {
@@ -224,6 +236,10 @@ func runCharmeraPhotos(cmd *cobra.Command, args []string) {
 	rsyncByDate(groups)
 	promptAndCleanupFlat()
 	unmountDrive()
+
+	if immichKey != "" && immichServer != "" && immichLibrary != "" {
+		triggerSync()
+	}
 }
 
 func runVersion(cmd *cobra.Command, args []string) {
@@ -241,6 +257,10 @@ func runVersion(cmd *cobra.Command, args []string) {
 }
 
 func runSyncCmd(cmd *cobra.Command, args []string) {
+	triggerSync()
+}
+
+func triggerSync() {
 	url := immichServer + "/libraries/" + immichLibrary + "/scan"
 	log.Debug().Str("url", url).Msg("Making request to server")
 	client := &http.Client{}
