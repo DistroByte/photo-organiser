@@ -91,6 +91,9 @@ func main() {
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "enable debug logging")
 	rootCmd.PersistentFlags().BoolVarP(&dryRun, "dry-run", "n", false, "will not move files, copy them to the remote, or cleanup source directories")
 	rootCmd.PersistentFlags().StringVar(&mountType, "mount-type", "exfat", "filesystem type for mounting")
+	rootCmd.PersistentFlags().StringVar(&immichLibrary, "library", "", "library to trigger a scan on")
+	rootCmd.PersistentFlags().StringVar(&immichKey, "key", "", "immich api key")
+	rootCmd.PersistentFlags().StringVar(&immichServer, "server", "", "immich api base url")
 	rootCmd.PersistentFlags().SortFlags = false
 
 	sonyCmd := &cobra.Command{
@@ -138,12 +141,9 @@ func main() {
 		Short: "Trigger an immich sync",
 		Run:   runSyncCmd,
 	}
-	syncCmd.Flags().StringVar(&immichLibrary, "library", "", "library to trigger a scan on")
-	syncCmd.Flags().StringVar(&immichKey, "key", "", "immich api key")
-	syncCmd.Flags().StringVar(&immichServer, "server", "", "immich api base url")
-	syncCmd.MarkFlagRequired("library")
-	syncCmd.MarkFlagRequired("key")
-	syncCmd.MarkFlagRequired("server")
+	syncCmd.MarkPersistentFlagRequired("library")
+	syncCmd.MarkPersistentFlagRequired("key")
+	syncCmd.MarkPersistentFlagRequired("server")
 
 	versionCmd := &cobra.Command{
 		Use:   "version",
