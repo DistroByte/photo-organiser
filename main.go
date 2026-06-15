@@ -9,6 +9,7 @@ Available Commands:
 	help        Help about any command
 	sony        Organise Sony camera photos (default)
 	sync        Trigger an immich sync
+	update      Update photo-organiser to the latest release
 	version     Print version information
 
 Flags:
@@ -149,12 +150,19 @@ func main() {
 		Run:   runVersion,
 	}
 
+	updateCmd := &cobra.Command{
+		Use:   "update",
+		Short: "Update photo-organiser to the latest release",
+		Run:   runUpdate,
+	}
+
 	rootCmd.AddCommand(sonyCmd)
 	rootCmd.AddCommand(djiCmd)
 	rootCmd.AddCommand(canonCmd)
 	rootCmd.AddCommand(charmeraCmd)
 	rootCmd.AddCommand(syncCmd)
 	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(updateCmd)
 	rootCmd.Run = func(cmd *cobra.Command, args []string) {
 		_ = cmd.Help()
 	}
