@@ -18,14 +18,20 @@ Flags:
 	-n, --dry-run              will not move files, copy them to the remote, or cleanup source directories
 	-h, --help                 help for photo-organiser
 	    --host string          remote host for rsync
+	    --key string           immich api key (use instead of --host/--remote-path for direct upload)
 	    --mount-type string    filesystem type for mounting (default "exfat")
 	    --remote-path string   remote destination path for rsync
+	    --server string        immich api base url (e.g. https://immich.local/api)
 	-s, --source string        source directory containing the photos. (default /mount/point/DCIM)
 	    --user string          remote user for rsync (default "james")
 	-v, --verbose              enable debug logging
 
 Example usage:
 
+	# Upload directly to Immich (no SSH required)
+	photo-organiser sony --server https://immich.local/api --key <api-key>
+
+	# Upload via rsync over SSH
 	photo-organiser sony --host remote.host --user username --remote-path /path/on/remote
 */
 package main
@@ -103,8 +109,6 @@ func main() {
 	}
 	sonyCmd.MarkPersistentFlagRequired("device")
 	sonyCmd.MarkPersistentFlagRequired("directory")
-	sonyCmd.MarkPersistentFlagRequired("host")
-	sonyCmd.MarkPersistentFlagRequired("remote-path")
 
 	djiCmd := &cobra.Command{
 		Use:   "dji",
@@ -113,8 +117,6 @@ func main() {
 	}
 	djiCmd.MarkPersistentFlagRequired("device")
 	djiCmd.MarkPersistentFlagRequired("directory")
-	djiCmd.MarkPersistentFlagRequired("host")
-	djiCmd.MarkPersistentFlagRequired("remote-path")
 
 	canonCmd := &cobra.Command{
 		Use:   "canon",
@@ -123,8 +125,6 @@ func main() {
 	}
 	canonCmd.MarkPersistentFlagRequired("device")
 	canonCmd.MarkPersistentFlagRequired("directory")
-	canonCmd.MarkPersistentFlagRequired("host")
-	canonCmd.MarkPersistentFlagRequired("remote-path")
 
 	charmeraCmd := &cobra.Command{
 		Use:   "charmera",
@@ -133,8 +133,6 @@ func main() {
 	}
 	charmeraCmd.MarkPersistentFlagRequired("device")
 	charmeraCmd.MarkPersistentFlagRequired("directory")
-	charmeraCmd.MarkPersistentFlagRequired("host")
-	charmeraCmd.MarkPersistentFlagRequired("remote-path")
 
 	syncCmd := &cobra.Command{
 		Use:   "sync",
@@ -166,6 +164,18 @@ func main() {
 	}
 }
 
+// transferPhotos uploads or syncs a set of date groups using the configured mode.
+// Immich API mode is used when --server and --key are set; rsync is the fallback.
+func transferPhotos(groups []dateGroup) {
+	if immichServer != "" && immichKey != "" {
+		uploadByDate(groups)
+	} else if remoteHost != "" && remotePath != "" {
+		rsyncByDate(groups)
+	} else {
+		log.Fatal().Msg("provide either --server + --key (Immich API) or --host + --remote-path (rsync)")
+	}
+}
+
 func runCameraPhotos(cmd *cobra.Command, args []string) {
 	if sourceDir == "" {
 		sourceDir = filepath.Join(directory, "DCIM")
@@ -176,7 +186,7 @@ func runCameraPhotos(cmd *cobra.Command, args []string) {
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to group Sony photos by date")
 	}
-	rsyncByDate(groups)
+	transferPhotos(groups)
 	promptAndCleanup()
 	unmountDrive()
 
@@ -195,7 +205,7 @@ func runDJIPhotos(cmd *cobra.Command, args []string) {
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to group DJI photos by date")
 	}
-	rsyncByDate(groups)
+	transferPhotos(groups)
 	promptAndCleanupFlat()
 	unmountDrive()
 
@@ -214,7 +224,7 @@ func runCanonPhotos(cmd *cobra.Command, args []string) {
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to group Canon photos by date")
 	}
-	rsyncByDate(groups)
+	transferPhotos(groups)
 	promptAndCleanup()
 	unmountDrive()
 
@@ -233,7 +243,7 @@ func runCharmeraPhotos(cmd *cobra.Command, args []string) {
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to group Charmera photos by date")
 	}
-	rsyncByDate(groups)
+	transferPhotos(groups)
 	promptAndCleanupFlat()
 	unmountDrive()
 
