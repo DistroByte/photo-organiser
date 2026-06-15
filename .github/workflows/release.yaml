@@ -11,6 +11,18 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            suffix: linux-amd64
+          - goos: darwin
+            goarch: amd64
+            suffix: darwin-amd64
+          - goos: darwin
+            goarch: arm64
+            suffix: darwin-arm64
     steps:
       - uses: actions/checkout@v6
 
@@ -22,11 +34,11 @@ jobs:
 
       - name: Build
         run: |
-          go build -v -o photo-organiser
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -v -o photo-organiser-${{ matrix.suffix }}
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v2
         with:
-          files: photo-organiser
+          files: photo-organiser-${{ matrix.suffix }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
