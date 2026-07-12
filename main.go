@@ -99,8 +99,8 @@ func main() {
 	rootCmd.PersistentFlags().BoolVarP(&dryRun, "dry-run", "n", false, "will not move files, copy them to the remote, or cleanup source directories")
 	rootCmd.PersistentFlags().StringVar(&mountType, "mount-type", "exfat", "filesystem type for mounting")
 	rootCmd.PersistentFlags().StringVar(&immichLibrary, "library", "", "library to trigger a scan on")
-	rootCmd.PersistentFlags().StringVar(&immichKey, "key", "", "immich api key")
-	rootCmd.PersistentFlags().StringVar(&immichServer, "server", "", "immich api base url")
+	rootCmd.PersistentFlags().StringVar(&immichKey, "key", os.Getenv("IMMICH_API_KEY"), "immich api key (env: IMMICH_API_KEY)")
+	rootCmd.PersistentFlags().StringVar(&immichServer, "server", os.Getenv("IMMICH_SERVER"), "immich api base url (env: IMMICH_SERVER)")
 	rootCmd.PersistentFlags().SortFlags = false
 
 	sonyCmd := &cobra.Command{
@@ -141,8 +141,6 @@ func main() {
 		Run:   runSyncCmd,
 	}
 	syncCmd.MarkPersistentFlagRequired("library")
-	syncCmd.MarkPersistentFlagRequired("key")
-	syncCmd.MarkPersistentFlagRequired("server")
 
 	versionCmd := &cobra.Command{
 		Use:   "version",
@@ -275,6 +273,12 @@ func runVersion(cmd *cobra.Command, args []string) {
 }
 
 func runSyncCmd(cmd *cobra.Command, args []string) {
+	if immichKey == "" {
+		log.Fatal().Msg("provide --key or set IMMICH_API_KEY")
+	}
+	if immichServer == "" {
+		log.Fatal().Msg("provide --server or set IMMICH_SERVER")
+	}
 	triggerSync()
 }
 
