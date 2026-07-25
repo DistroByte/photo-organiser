@@ -36,17 +36,39 @@ func groupSonyByDate(sourceDir string) ([]dateGroup, error) {
 		if !entry.IsDir() || !sonyFolderNameRegex.MatchString(entry.Name()) {
 			continue
 		}
-		date, err := calculateDestinationDir(entry.Name())
+		dirPath := filepath.Join(sourceDir, entry.Name())
+		date, err := sonyFolderDate(dirPath)
 		if err != nil {
-			log.Warn().Str("dir", entry.Name()).Err(err).Msg("skipping directory with unparseable name")
+			log.Warn().Str("dir", entry.Name()).Err(err).Msg("skipping directory: cannot determine date")
 			continue
 		}
 		groups = append(groups, dateGroup{
-			sourceDir: filepath.Join(sourceDir, entry.Name()),
+			sourceDir: dirPath,
 			date:      date,
 		})
 	}
 	return groups, nil
+}
+
+// sonyFolderDate determines a Sony date folder's date from the first photo it
+// contains. The folder name encodes only a single year digit, so it cannot
+// distinguish decades; reading the photo's EXIF (with mtime fallback) is reliable.
+func sonyFolderDate(dirPath string) (string, error) {
+	entries, err := os.ReadDir(dirPath)
+	if err != nil {
+		return "", err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		taken, err := photoDate(filepath.Join(dirPath, entry.Name()))
+		if err != nil {
+			continue
+		}
+		return taken.Format("2006-01-02"), nil
+	}
+	return "", fmt.Errorf("no readable files in %s", dirPath)
 }
 
 func groupDJIByDate(sourceDir string) ([]dateGroup, error) {
@@ -306,15 +328,4 @@ func dateGroupsFromMap(sourceDir string, byDate map[string][]string) []dateGroup
 		})
 	}
 	return groups
-}
-
-func calculateDestinationDir(dirName string) (string, error) {
-	if len(dirName) < 8 {
-		return "", fmt.Errorf("directory name %s is too short to determine date", dirName)
-	}
-	currentYearStr := fmt.Sprintf("%d", time.Now().Year())
-	year := currentYearStr[:3] + dirName[3:4]
-	month := dirName[4:6]
-	day := dirName[6:8]
-	return fmt.Sprintf("%s-%s-%s", year, month, day), nil
 }

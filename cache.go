@@ -12,6 +12,7 @@ import (
 type uploadCache struct {
 	entries map[string]string // cacheKey → immich asset ID
 	path    string
+	dirty   bool // entries changed since the last flush
 }
 
 func defaultCachePath() string {
@@ -48,10 +49,19 @@ func (c *uploadCache) has(key string) (string, bool) {
 	return id, ok
 }
 
-// mark records key→assetID and persists the cache to disk immediately so
-// progress is not lost if the process is interrupted mid-batch.
+// mark records key→assetID in memory. Call flush to persist; batching the writes
+// avoids rewriting the whole cache file once per uploaded file.
 func (c *uploadCache) mark(key, assetID string) {
 	c.entries[key] = assetID
+	c.dirty = true
+}
+
+// flush persists the cache to disk if it has unsaved changes. It is called after
+// each date group so an interrupted run keeps the progress of completed groups.
+func (c *uploadCache) flush() {
+	if !c.dirty {
+		return
+	}
 	data, err := json.MarshalIndent(c.entries, "", "  ")
 	if err != nil {
 		log.Warn().Err(err).Msg("could not marshal upload cache")
@@ -63,7 +73,9 @@ func (c *uploadCache) mark(key, assetID string) {
 	}
 	if err := os.WriteFile(c.path, data, 0644); err != nil {
 		log.Warn().Err(err).Msg("could not save upload cache")
+		return
 	}
+	c.dirty = false
 }
 
 // cacheKey identifies a source file by name and byte size.

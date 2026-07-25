@@ -27,7 +27,9 @@ func uploadByDate(groups []dateGroup) {
 	start := time.Now()
 	for _, group := range groups {
 		log.Info().Str("date", group.date).Str("source", group.sourceDir).Msg("uploading")
-		if err := uploadGroup(group, cache); err != nil {
+		err := uploadGroup(group, cache)
+		cache.flush()
+		if err != nil {
 			log.Fatal().Err(err).Str("date", group.date).Msg("upload failed")
 		}
 	}
@@ -85,6 +87,13 @@ func uploadFile(path string, cache *uploadCache) error {
 	}
 	defer f.Close()
 
+	// fileCreatedAt should reflect when the photo was taken (EXIF), falling back to
+	// mtime; fileModifiedAt stays mtime. photoDate handles the EXIF/mtime fallback.
+	created := info.ModTime()
+	if taken, dateErr := photoDate(path); dateErr == nil {
+		created = taken
+	}
+
 	pr, pw := io.Pipe()
 	mw := multipart.NewWriter(pw)
 
@@ -98,12 +107,11 @@ func uploadFile(path string, cache *uploadCache) error {
 			pw.CloseWithError(err)
 			return
 		}
-		ts := info.ModTime().UTC().Format(time.RFC3339)
 		for _, pair := range [][2]string{
 			{"deviceAssetId", filepath.Base(path)},
 			{"deviceId", "photo-organiser"},
-			{"fileCreatedAt", ts},
-			{"fileModifiedAt", ts},
+			{"fileCreatedAt", created.UTC().Format(time.RFC3339)},
+			{"fileModifiedAt", info.ModTime().UTC().Format(time.RFC3339)},
 			{"isFavorite", "false"},
 		} {
 			if err := mw.WriteField(pair[0], pair[1]); err != nil {
@@ -124,7 +132,7 @@ func uploadFile(path string, cache *uploadCache) error {
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	req.Header.Set("x-api-key", immichKey)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return err
 	}

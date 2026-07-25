@@ -41,15 +41,28 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
+
+// httpClient is shared by every network call. It bounds connection setup and the
+// wait for response headers without capping total transfer time, so large uploads
+// and downloads still succeed while a dead server or stalled connection fails fast.
+var httpClient = &http.Client{
+	Transport: &http.Transport{
+		DialContext:           (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 30 * time.Second,
+	},
+}
 
 var (
 	sourceDir     string
@@ -290,7 +303,6 @@ func runSyncCmd(cmd *cobra.Command, args []string) {
 func triggerSync() {
 	url := immichServer + "/libraries/" + immichLibrary + "/scan"
 	log.Debug().Str("url", url).Msg("Making request to server")
-	client := &http.Client{}
 	req, err := http.NewRequest("POST", url, nil)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to create http request")
@@ -299,7 +311,7 @@ func triggerSync() {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-api-key", immichKey)
 
-	resp, err := client.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to perform http request")
 	}

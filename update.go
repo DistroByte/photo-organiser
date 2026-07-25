@@ -75,7 +75,7 @@ func runUpdate(cmd *cobra.Command, args []string) {
 }
 
 func fetchLatestRelease(url string) (*githubRelease, error) {
-	resp, err := http.Get(url) //nolint:noctx
+	resp, err := httpClient.Get(url) //nolint:noctx
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +102,7 @@ func downloadAndReplace(url string) error {
 		return fmt.Errorf("could not resolve executable path: %w", err)
 	}
 
-	resp, err := http.Get(url) //nolint:noctx
+	resp, err := httpClient.Get(url) //nolint:noctx
 	if err != nil {
 		return fmt.Errorf("download failed: %w", err)
 	}
