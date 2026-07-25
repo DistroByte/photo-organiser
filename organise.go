@@ -200,7 +200,7 @@ func photoDate(path string) (time.Time, error) {
 	if err != nil {
 		return time.Time{}, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	x, err := exif.Decode(f)
 	if err == nil {

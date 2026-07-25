@@ -41,10 +41,10 @@ func runRsync(group dateGroup) error {
 		if err != nil {
 			return fmt.Errorf("creating file list: %w", err)
 		}
-		defer os.Remove(tmp.Name())
+		defer func() { _ = os.Remove(tmp.Name()) }()
 
 		if _, err := fmt.Fprintln(tmp, strings.Join(group.files, "\n")); err != nil {
-			tmp.Close()
+			_ = tmp.Close()
 			return fmt.Errorf("writing file list: %w", err)
 		}
 		if err := tmp.Close(); err != nil {

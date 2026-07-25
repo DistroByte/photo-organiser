@@ -85,7 +85,7 @@ func uploadFile(path string, cache *uploadCache) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	// fileCreatedAt should reflect when the photo was taken (EXIF), falling back to
 	// mtime; fileModifiedAt stays mtime. photoDate handles the EXIF/mtime fallback.
@@ -119,8 +119,11 @@ func uploadFile(path string, cache *uploadCache) error {
 				return
 			}
 		}
-		mw.Close()
-		pw.Close()
+		if err := mw.Close(); err != nil {
+			pw.CloseWithError(err)
+			return
+		}
+		_ = pw.Close()
 	}()
 
 	url := immichServer + "/assets"
@@ -136,7 +139,7 @@ func uploadFile(path string, cache *uploadCache) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != 200 && resp.StatusCode != 201 {

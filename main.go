@@ -315,7 +315,7 @@ func triggerSync() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to perform http request")
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	bodyBytes, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != 204 {
