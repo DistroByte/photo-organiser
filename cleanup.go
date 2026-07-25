@@ -44,10 +44,10 @@ func cleanupFlatSourceFiles(sourceDir string) error {
 	return nil
 }
 
-func promptAndCleanup() {
+func promptAndCleanup() bool {
 	if dryRun {
 		log.Info().Msg("Dry run complete. No files were actually moved or deleted.")
-		return
+		return false
 	}
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Print("Cleanup source directories? [y/N]: ")
@@ -57,15 +57,32 @@ func promptAndCleanup() {
 			log.Fatal().Err(err).Msg("failed to cleanup source directories")
 		}
 		log.Info().Msg("Source directories cleaned up.")
-	} else {
-		log.Info().Msg("Skipping cleanup of source directories.")
+		return true
 	}
+	log.Info().Msg("Skipping cleanup of source directories.")
+	return false
 }
 
-func promptAndCleanupFlat() {
+// cleanupSonyCardIndex removes the Sony card ownership index and the auto-image
+// index directory so the camera does not complain about missing files on reinsertion.
+func cleanupSonyCardIndex(cardRoot string) {
+	targets := []string{
+		filepath.Join(cardRoot, "PRIVATE", "SONY", "SONYCARD.IND"),
+		filepath.Join(cardRoot, "AVF_INFO"),
+	}
+	for _, target := range targets {
+		log.Debug().Str("path", target).Msg("removing Sony card index entry")
+		if err := os.RemoveAll(target); err != nil {
+			log.Warn().Str("path", target).Err(err).Msg("failed to remove Sony card index entry")
+		}
+	}
+	log.Info().Msg("Sony card index cleared.")
+}
+
+func promptAndCleanupFlat() bool {
 	if dryRun {
 		log.Info().Msg("Dry run complete. No files were actually moved or deleted.")
-		return
+		return false
 	}
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Print("Cleanup source files? [y/N]: ")
@@ -75,7 +92,8 @@ func promptAndCleanupFlat() {
 			log.Fatal().Err(err).Msg("failed to cleanup source files")
 		}
 		log.Info().Msg("Source files cleaned up.")
-	} else {
-		log.Info().Msg("Skipping cleanup of source files.")
+		return true
 	}
+	log.Info().Msg("Skipping cleanup of source files.")
+	return false
 }

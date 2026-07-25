@@ -103,44 +103,80 @@ func main() {
 	rootCmd.PersistentFlags().StringVar(&immichServer, "server", os.Getenv("IMMICH_SERVER"), "immich api base url (env: IMMICH_SERVER)")
 	rootCmd.PersistentFlags().SortFlags = false
 
-	sonyCmd := &cobra.Command{
-		Use:   "sony",
-		Short: "Organise Sony camera photos (default)",
-		Run:   runCameraPhotos,
+	cameraCmds := []struct {
+		use   string
+		short string
+		job   cameraJob
+	}{
+		{
+			use:   "sony",
+			short: "Organise Sony camera photos (default)",
+			job: cameraJob{
+				name:           "sony",
+				defaultSource:  func() string { return filepath.Join(directory, "DCIM") },
+				group:          groupSonyByDate,
+				clearSonyIndex: true,
+			},
+		},
+		{
+			use:   "sony-video",
+			short: "Transfer Sony camera videos via rsync",
+			job: cameraJob{
+				name:           "sony-video",
+				defaultSource:  func() string { return filepath.Join(directory, "PRIVATE", "M4ROOT", "CLIP") },
+				group:          groupSonyVideosByDate,
+				flatCleanup:    true,
+				clearSonyIndex: true,
+				rsyncOnly:      true,
+			},
+		},
+		{
+			use:   "dji",
+			short: "Organise DJI camera (action/drone) photos",
+			job: cameraJob{
+				name:          "dji",
+				defaultSource: func() string { return filepath.Join(directory, "DCIM", "DJI_001") },
+				group:         groupDJIByDate,
+				flatCleanup:   true,
+			},
+		},
+		{
+			use:   "canon",
+			short: "Organise Canon camera photos",
+			job: cameraJob{
+				name:          "canon",
+				defaultSource: func() string { return filepath.Join(directory, "DCIM") },
+				group:         groupCanonByDate,
+			},
+		},
+		{
+			use:   "charmera",
+			short: "Organise Kodak Charmera keychain camera photos",
+			job: cameraJob{
+				name:          "charmera",
+				defaultSource: func() string { return directory },
+				group:         groupCharmeraByDate,
+				flatCleanup:   true,
+			},
+		},
 	}
-	sonyCmd.MarkPersistentFlagRequired("device")
-	sonyCmd.MarkPersistentFlagRequired("directory")
-
-	djiCmd := &cobra.Command{
-		Use:   "dji",
-		Short: "Organise DJI camera (action/drone) photos",
-		Run:   runDJIPhotos,
+	for _, cc := range cameraCmds {
+		cameraCmd := &cobra.Command{
+			Use:   cc.use,
+			Short: cc.short,
+			Run:   cc.job.run,
+		}
+		_ = cameraCmd.MarkPersistentFlagRequired("device")
+		_ = cameraCmd.MarkPersistentFlagRequired("directory")
+		rootCmd.AddCommand(cameraCmd)
 	}
-	djiCmd.MarkPersistentFlagRequired("device")
-	djiCmd.MarkPersistentFlagRequired("directory")
-
-	canonCmd := &cobra.Command{
-		Use:   "canon",
-		Short: "Organise Canon camera photos",
-		Run:   runCanonPhotos,
-	}
-	canonCmd.MarkPersistentFlagRequired("device")
-	canonCmd.MarkPersistentFlagRequired("directory")
-
-	charmeraCmd := &cobra.Command{
-		Use:   "charmera",
-		Short: "Organise Kodak Charmera keychain camera photos",
-		Run:   runCharmeraPhotos,
-	}
-	charmeraCmd.MarkPersistentFlagRequired("device")
-	charmeraCmd.MarkPersistentFlagRequired("directory")
 
 	syncCmd := &cobra.Command{
 		Use:   "sync",
 		Short: "Trigger an immich sync",
 		Run:   runSyncCmd,
 	}
-	syncCmd.MarkPersistentFlagRequired("library")
+	_ = syncCmd.MarkPersistentFlagRequired("library")
 
 	versionCmd := &cobra.Command{
 		Use:   "version",
@@ -154,10 +190,6 @@ func main() {
 		Run:   runUpdate,
 	}
 
-	rootCmd.AddCommand(sonyCmd)
-	rootCmd.AddCommand(djiCmd)
-	rootCmd.AddCommand(canonCmd)
-	rootCmd.AddCommand(charmeraCmd)
 	rootCmd.AddCommand(syncCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(updateCmd)
@@ -182,78 +214,51 @@ func transferPhotos(groups []dateGroup) {
 	}
 }
 
-func runCameraPhotos(cmd *cobra.Command, args []string) {
-	if sourceDir == "" {
-		sourceDir = filepath.Join(directory, "DCIM")
-		log.Debug().Str("sourceDir", sourceDir).Msg("inferred sourceDir from mount point + /DCIM")
-	}
-	mountDrive()
-	groups, err := groupSonyByDate(sourceDir)
-	if err != nil {
-		log.Fatal().Err(err).Msg("failed to group Sony photos by date")
-	}
-	transferPhotos(groups)
-	promptAndCleanup()
-	unmountDrive()
-
-	if immichKey != "" && immichServer != "" && immichLibrary != "" {
-		triggerSync()
-	}
+// cameraJob describes how one camera subcommand locates, transfers, and cleans up files.
+type cameraJob struct {
+	name           string
+	defaultSource  func() string                     // source dir when --source is not given
+	group          func(string) ([]dateGroup, error) // group source files by date
+	flatCleanup    bool                              // remove loose files rather than whole date directories
+	clearSonyIndex bool                              // also clear Sony card index files after cleanup
+	rsyncOnly      bool                              // require rsync (no Immich upload, no library scan)
 }
 
-func runDJIPhotos(cmd *cobra.Command, args []string) {
+func (job cameraJob) run(cmd *cobra.Command, args []string) {
 	if sourceDir == "" {
-		sourceDir = filepath.Join(directory, "DCIM", "DJI_001")
-		log.Debug().Str("sourceDir", sourceDir).Msg("inferred sourceDir for DJI camera")
+		sourceDir = job.defaultSource()
+		log.Debug().Str("sourceDir", sourceDir).Msg("inferred source directory")
 	}
+	if job.rsyncOnly && (remoteHost == "" || remotePath == "") {
+		log.Fatal().Msg("provide --host and --remote-path for rsync")
+	}
+
 	mountDrive()
-	groups, err := groupDJIByDate(sourceDir)
+
+	groups, err := job.group(sourceDir)
 	if err != nil {
-		log.Fatal().Err(err).Msg("failed to group DJI photos by date")
+		log.Fatal().Err(err).Str("camera", job.name).Msg("failed to group files by date")
 	}
-	transferPhotos(groups)
-	promptAndCleanupFlat()
+
+	if job.rsyncOnly {
+		rsyncByDate(groups)
+	} else {
+		transferPhotos(groups)
+	}
+
+	var cleaned bool
+	if job.flatCleanup {
+		cleaned = promptAndCleanupFlat()
+	} else {
+		cleaned = promptAndCleanup()
+	}
+	if cleaned && job.clearSonyIndex {
+		cleanupSonyCardIndex(directory)
+	}
+
 	unmountDrive()
 
-	if immichKey != "" && immichServer != "" && immichLibrary != "" {
-		triggerSync()
-	}
-}
-
-func runCanonPhotos(cmd *cobra.Command, args []string) {
-	if sourceDir == "" {
-		sourceDir = filepath.Join(directory, "DCIM")
-		log.Debug().Str("sourceDir", sourceDir).Msg("inferred sourceDir from mount point + /DCIM")
-	}
-	mountDrive()
-	groups, err := groupCanonByDate(sourceDir)
-	if err != nil {
-		log.Fatal().Err(err).Msg("failed to group Canon photos by date")
-	}
-	transferPhotos(groups)
-	promptAndCleanup()
-	unmountDrive()
-
-	if immichKey != "" && immichServer != "" && immichLibrary != "" {
-		triggerSync()
-	}
-}
-
-func runCharmeraPhotos(cmd *cobra.Command, args []string) {
-	if sourceDir == "" {
-		sourceDir = directory
-		log.Debug().Str("sourceDir", sourceDir).Msg("inferred sourceDir from mount point root")
-	}
-	mountDrive()
-	groups, err := groupCharmeraByDate(sourceDir)
-	if err != nil {
-		log.Fatal().Err(err).Msg("failed to group Charmera photos by date")
-	}
-	transferPhotos(groups)
-	promptAndCleanupFlat()
-	unmountDrive()
-
-	if immichKey != "" && immichServer != "" && immichLibrary != "" {
+	if !job.rsyncOnly && immichKey != "" && immichServer != "" && immichLibrary != "" {
 		triggerSync()
 	}
 }

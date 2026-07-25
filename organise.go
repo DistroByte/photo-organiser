@@ -16,6 +16,8 @@ import (
 var sonyFolderNameRegex = regexp.MustCompile(`^\d{8}$`)
 var djiFilenameRegex = regexp.MustCompile(`^DJI_(\d{4})(\d{2})(\d{2})\d{6}_\d+_\w\..+$`)
 var isoDateRegex = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+var videoExtensions = map[string]bool{".mp4": true, ".mov": true}
+var creationDateRegex = regexp.MustCompile(`<CreationDate value="(\d{4}-\d{2}-\d{2})`)
 
 // dateGroup holds the rsync source and file list for one date's worth of photos.
 type dateGroup struct {
@@ -205,6 +207,93 @@ func parseEXIFDate(raw string) (time.Time, error) {
 		return t, nil
 	}
 	return time.Parse("2006:01:02:15:04:05", raw)
+}
+
+// sonyVideoSidecarRegex matches Sony NonRealTimeMeta XML sidecars, e.g. C0023M01.XML.
+// Capture group 1 is the clip base name (C0023).
+var sonyVideoSidecarRegex = regexp.MustCompile(`(?i)^([A-Z]\d+)M\d+\.XML$`)
+
+func groupSonyVideosByDate(sourceDir string) ([]dateGroup, error) {
+	entries, err := os.ReadDir(sourceDir)
+	if err != nil {
+		return nil, err
+	}
+
+	// clipDate maps clip base name (e.g. "C0023") → date string.
+	clipDate := make(map[string]string)
+	// byDate accumulates file names grouped by date.
+	byDate := make(map[string][]string)
+
+	// First pass: video files — establish the date for each clip.
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !videoExtensions[strings.ToLower(filepath.Ext(name))] {
+			continue
+		}
+		base := strings.TrimSuffix(name, filepath.Ext(name))
+		date := sonyVideoDate(sourceDir, entry)
+		clipDate[base] = date
+		byDate[date] = append(byDate[date], name)
+	}
+
+	// Second pass: pair XML sidecars with their clip's date group.
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		matches := sonyVideoSidecarRegex.FindStringSubmatch(name)
+		if matches == nil {
+			continue
+		}
+		clipBase := matches[1]
+		date, ok := clipDate[clipBase]
+		if !ok {
+			log.Debug().Str("file", name).Msg("skipping XML sidecar: no matching video clip")
+			continue
+		}
+		byDate[date] = append(byDate[date], name)
+	}
+
+	return dateGroupsFromMap(sourceDir, byDate), nil
+}
+
+// sonyVideoDate returns the recording date for a Sony video clip.
+// It prefers the CreationDate field from the paired XML sidecar, falling back to mtime.
+func sonyVideoDate(dir string, entry fs.DirEntry) string {
+	base := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
+
+	// Try the XML sidecar: look for <base>M01.XML, M02.XML, etc.
+	sidecarGlob := filepath.Join(dir, base+"M*.XML")
+	matches, _ := filepath.Glob(sidecarGlob)
+	for _, xmlPath := range matches {
+		if date, err := parseSonyXMLDate(xmlPath); err == nil {
+			return date
+		}
+	}
+
+	// Fall back to file modification time.
+	info, err := entry.Info()
+	if err != nil {
+		return time.Now().Format("2006-01-02")
+	}
+	return info.ModTime().Format("2006-01-02")
+}
+
+// parseSonyXMLDate extracts CreationDate from a Sony NonRealTimeMeta XML sidecar.
+func parseSonyXMLDate(xmlPath string) (string, error) {
+	data, err := os.ReadFile(xmlPath)
+	if err != nil {
+		return "", err
+	}
+	sub := creationDateRegex.FindSubmatch(data)
+	if sub == nil {
+		return "", fmt.Errorf("no CreationDate in %s", xmlPath)
+	}
+	return string(sub[1]), nil
 }
 
 func dateGroupsFromMap(sourceDir string, byDate map[string][]string) []dateGroup {
