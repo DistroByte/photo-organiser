@@ -11,4 +11,4 @@ updates:
       - "dependencies"
     pull-request-branch-name:
       separator: /
-    target-branch: master
+    target-branch: main
