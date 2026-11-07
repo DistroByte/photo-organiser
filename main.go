@@ -1,39 +1,33 @@
 /*
-photo-organiser is a CLI tool that organises camera photos into a directory structure based on the date they were taken.
+photo-organiser imports photos from a camera card, groups them by the date they
+were taken, and sends each day to Immich or to a remote directory over rsync.
+
+It recognises the card layout on its own (Sony, DJI, Canon, Kodak Charmera), so
+the usual invocation is just:
+
+	photo-organiser
 
 Available Commands:
 
-	canon       Organise Canon camera photos
-	completion  Generate the autocompletion script for the specified shell
-	dji         Organise DJI camera (action/drone) photos
-	help        Help about any command
-	sony        Organise Sony camera photos (default)
-	sync        Trigger an immich sync
+	sync        Trigger an immich library scan
 	update      Update photo-organiser to the latest release
 	version     Print version information
 
 Flags:
 
+	-s, --source string        source directory, overriding the layout's default
+	    --camera string        card layout to assume instead of detecting it (sony, dji, canon, charmera)
 	    --device string        device to mount (default "/dev/sdd1")
 	    --directory string     mount point (default "/dev/camera")
-	-n, --dry-run              will not move files, copy them to the remote, or cleanup source directories
-	-h, --help                 help for photo-organiser
+	    --mount-type string    filesystem type for mounting; empty skips mounting (default "exfat")
+	    --server string        immich api base url, e.g. https://immich.local/api (env: IMMICH_SERVER)
+	    --key string           immich api key (env: IMMICH_API_KEY)
+	    --library string       immich library to scan after uploading
 	    --host string          remote host for rsync
-	    --key string           immich api key (use instead of --host/--remote-path for direct upload)
-	    --mount-type string    filesystem type for mounting (default "exfat")
+	    --user string          remote user for rsync (default "$USER")
 	    --remote-path string   remote destination path for rsync
-	    --server string        immich api base url (e.g. https://immich.local/api)
-	-s, --source string        source directory containing the photos. (default /mount/point/DCIM)
-	    --user string          remote user for rsync (default "james")
 	-v, --verbose              enable debug logging
-
-Example usage:
-
-	# Upload directly to Immich (no SSH required)
-	photo-organiser sony --server https://immich.local/api --key <api-key>
-
-	# Upload via rsync over SSH
-	photo-organiser sony --host remote.host --user username --remote-path /path/on/remote
+	-n, --dry-run              will not move files, copy them to the remote, or cleanup source directories
 */
 package main
 
@@ -44,7 +38,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
 	"runtime/debug"
 	"time"
 
@@ -75,6 +68,7 @@ func newHTTPClient(responseHeaderTimeout time.Duration) *http.Client {
 
 var (
 	sourceDir     string
+	cameraName    string
 	dryRun        bool
 	verbose       bool
 	remoteUser    string
@@ -96,191 +90,112 @@ type ImmichError struct {
 
 func main() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
-
-	rootCmd := &cobra.Command{
-		Use:   "photo-organiser",
-		Short: "Organise camera photos into a directory structure based on the date they were taken.",
-		Long:  `photo-organiser is a CLI tool that organises camera photos into a directory structure based on the date they were taken.`,
-
-		PersistentPreRun: func(cmd *cobra.Command, args []string) {
-			if verbose {
-				zerolog.SetGlobalLevel(zerolog.DebugLevel)
-			} else {
-				zerolog.SetGlobalLevel(zerolog.InfoLevel)
-			}
-		},
-	}
-
-	rootCmd.PersistentFlags().StringVar(&device, "device", "/dev/sdd1", "device to mount")
-	rootCmd.PersistentFlags().StringVar(&directory, "directory", "/dev/camera", "mount point")
-	rootCmd.PersistentFlags().StringVarP(&sourceDir, "source", "s", "", "source directory containing the photos. (default /mount/point/DCIM)")
-	rootCmd.PersistentFlags().StringVar(&remoteUser, "user", os.Getenv("USER"), "remote user for rsync")
-	rootCmd.PersistentFlags().StringVar(&remoteHost, "host", "", "remote host for rsync")
-	rootCmd.PersistentFlags().StringVar(&remotePath, "remote-path", "", "remote destination path for rsync")
-	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "enable debug logging")
-	rootCmd.PersistentFlags().BoolVarP(&dryRun, "dry-run", "n", false, "will not move files, copy them to the remote, or cleanup source directories")
-	rootCmd.PersistentFlags().StringVar(&mountType, "mount-type", "exfat", "filesystem type for mounting")
-	rootCmd.PersistentFlags().StringVar(&immichLibrary, "library", "", "library to trigger a scan on")
-	rootCmd.PersistentFlags().StringVar(&immichKey, "key", os.Getenv("IMMICH_API_KEY"), "immich api key (env: IMMICH_API_KEY)")
-	rootCmd.PersistentFlags().StringVar(&immichServer, "server", os.Getenv("IMMICH_SERVER"), "immich api base url (env: IMMICH_SERVER)")
-	rootCmd.PersistentFlags().SortFlags = false
-
-	cameraCmds := []struct {
-		use   string
-		short string
-		job   cameraJob
-	}{
-		{
-			use:   "sony",
-			short: "Organise Sony camera photos (default)",
-			job: cameraJob{
-				name:           "sony",
-				defaultSource:  func() string { return filepath.Join(directory, "DCIM") },
-				group:          groupSonyByDate,
-				clearSonyIndex: true,
-			},
-		},
-		{
-			use:   "sony-video",
-			short: "Transfer Sony camera videos via rsync",
-			job: cameraJob{
-				name:           "sony-video",
-				defaultSource:  func() string { return filepath.Join(directory, "PRIVATE", "M4ROOT", "CLIP") },
-				group:          groupSonyVideosByDate,
-				flatCleanup:    true,
-				clearSonyIndex: true,
-				rsyncOnly:      true,
-			},
-		},
-		{
-			use:   "dji",
-			short: "Organise DJI camera (action/drone) photos",
-			job: cameraJob{
-				name:          "dji",
-				defaultSource: func() string { return filepath.Join(directory, "DCIM", "DJI_001") },
-				group:         groupDJIByDate,
-				flatCleanup:   true,
-			},
-		},
-		{
-			use:   "canon",
-			short: "Organise Canon camera photos",
-			job: cameraJob{
-				name:          "canon",
-				defaultSource: func() string { return filepath.Join(directory, "DCIM") },
-				group:         groupCanonByDate,
-			},
-		},
-		{
-			use:   "charmera",
-			short: "Organise Kodak Charmera keychain camera photos",
-			job: cameraJob{
-				name:          "charmera",
-				defaultSource: func() string { return directory },
-				group:         groupCharmeraByDate,
-				flatCleanup:   true,
-			},
-		},
-	}
-	for _, cc := range cameraCmds {
-		cameraCmd := &cobra.Command{
-			Use:   cc.use,
-			Short: cc.short,
-			Run:   cc.job.run,
-		}
-		_ = cameraCmd.MarkPersistentFlagRequired("device")
-		_ = cameraCmd.MarkPersistentFlagRequired("directory")
-		rootCmd.AddCommand(cameraCmd)
-	}
-
-	syncCmd := &cobra.Command{
-		Use:   "sync",
-		Short: "Trigger an immich sync",
-		Run:   runSyncCmd,
-	}
-	_ = syncCmd.MarkPersistentFlagRequired("library")
-
-	versionCmd := &cobra.Command{
-		Use:   "version",
-		Short: "Print version information",
-		Run:   runVersion,
-	}
-
-	updateCmd := &cobra.Command{
-		Use:   "update",
-		Short: "Update photo-organiser to the latest release",
-		Run:   runUpdate,
-	}
-
-	rootCmd.AddCommand(syncCmd)
-	rootCmd.AddCommand(versionCmd)
-	rootCmd.AddCommand(updateCmd)
-	rootCmd.Run = func(cmd *cobra.Command, args []string) {
-		_ = cmd.Help()
-	}
-
-	if err := rootCmd.Execute(); err != nil {
+	if err := newRootCmd().Execute(); err != nil {
 		log.Fatal().Err(err).Msg("Failed to execute command")
 	}
 }
 
-// transferPhotos uploads or syncs a set of date groups using the configured mode.
-// Immich API mode is used when --server and --key are set; rsync is the fallback.
-func transferPhotos(groups []dateGroup) {
-	if immichServer != "" && immichKey != "" {
-		uploadByDate(groups)
-	} else if remoteHost != "" && remotePath != "" {
-		rsyncByDate(groups)
+func newRootCmd() *cobra.Command {
+	rootCmd := &cobra.Command{
+		Use:   "photo-organiser",
+		Short: "Import camera photos into Immich or a remote directory, grouped by the date they were taken.",
+		Long: `photo-organiser imports photos from a camera card, groups them by the date they
+were taken, and sends each day to Immich or to a remote directory over rsync.
+It recognises Sony, DJI, Canon and Kodak Charmera cards on its own.
+
+A plain "photo-organiser" imports whatever card is plugged in.`,
+		Args:             cobra.NoArgs,
+		PersistentPreRun: func(cmd *cobra.Command, args []string) { configureLogging() },
+		Run:              runImport,
+	}
+
+	rootCmd.Flags().StringVarP(&sourceDir, "source", "s", "", "source directory, overriding the layout's default")
+	rootCmd.Flags().StringVar(&cameraName, "camera", "", "card layout to assume instead of detecting it ("+layoutNames()+")")
+	rootCmd.Flags().SortFlags = false
+
+	flags := rootCmd.PersistentFlags()
+	flags.StringVar(&device, "device", "/dev/sdd1", "device to mount")
+	flags.StringVar(&directory, "directory", "/dev/camera", "mount point")
+	flags.StringVar(&mountType, "mount-type", "exfat", "filesystem type for mounting; empty skips mounting")
+	flags.StringVar(&immichServer, "server", os.Getenv("IMMICH_SERVER"), "immich api base url, e.g. https://immich.local/api (env: IMMICH_SERVER)")
+	flags.StringVar(&immichKey, "key", os.Getenv("IMMICH_API_KEY"), "immich api key (env: IMMICH_API_KEY)")
+	flags.StringVar(&immichLibrary, "library", "", "immich library to scan after uploading")
+	flags.StringVar(&remoteHost, "host", "", "remote host for rsync")
+	flags.StringVar(&remoteUser, "user", os.Getenv("USER"), "remote user for rsync")
+	flags.StringVar(&remotePath, "remote-path", "", "remote destination path for rsync")
+	flags.BoolVarP(&verbose, "verbose", "v", false, "enable debug logging")
+	flags.BoolVarP(&dryRun, "dry-run", "n", false, "will not move files, copy them to the remote, or cleanup source directories")
+	flags.SortFlags = false
+
+	rootCmd.AddCommand(
+		&cobra.Command{Use: "sync", Short: "Trigger an immich library scan", Args: cobra.NoArgs, Run: runSyncCmd},
+		&cobra.Command{Use: "version", Short: "Print version information", Args: cobra.NoArgs, Run: runVersion},
+		&cobra.Command{Use: "update", Short: "Update photo-organiser to the latest release", Args: cobra.NoArgs, Run: runUpdate},
+	)
+	return rootCmd
+}
+
+func configureLogging() {
+	if verbose {
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
 	} else {
-		log.Fatal().Msg("provide either --server + --key (Immich API) or --host + --remote-path (rsync)")
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
 	}
 }
 
-// cameraJob describes how one camera subcommand locates, transfers, and cleans up files.
-type cameraJob struct {
-	name           string
-	defaultSource  func() string                     // source dir when --source is not given
-	group          func(string) ([]dateGroup, error) // group source files by date
-	flatCleanup    bool                              // remove loose files rather than whole date directories
-	clearSonyIndex bool                              // also clear Sony card index files after cleanup
-	rsyncOnly      bool                              // require rsync (no Immich upload, no library scan)
-}
+func immichConfigured() bool { return immichServer != "" && immichKey != "" }
+func rsyncConfigured() bool  { return remoteHost != "" && remotePath != "" }
 
-func (job cameraJob) run(cmd *cobra.Command, args []string) {
-	if sourceDir == "" {
-		sourceDir = job.defaultSource()
-		log.Debug().Str("sourceDir", sourceDir).Msg("inferred source directory")
-	}
-	if job.rsyncOnly && (remoteHost == "" || remotePath == "") {
-		log.Fatal().Msg("provide --host and --remote-path for rsync")
-	}
-
+// runImport mounts the card, works out whose it is, transfers every source the
+// layout defines, and offers to clear the card afterwards.
+func runImport(cmd *cobra.Command, args []string) {
 	mountDrive()
 
-	groups, err := job.group(sourceDir)
+	layout, err := pickLayout(directory, cameraName)
 	if err != nil {
-		log.Fatal().Err(err).Str("camera", job.name).Msg("failed to group files by date")
+		unmountDrive()
+		log.Fatal().Err(err).Msg("cannot determine card layout")
+	}
+	log.Info().Str("camera", layout.name).Msg("card layout")
+
+	sources := resolveSources(layout, directory, sourceDir)
+	if len(sources) == 0 {
+		unmountDrive()
+		log.Fatal().Str("camera", layout.name).Str("root", directory).Msg("none of the layout's source directories exist on the card")
 	}
 
-	if job.rsyncOnly {
-		rsyncByDate(groups)
-	} else {
-		transferPhotos(groups)
+	var transferred []activeSource
+	var uploaded bool
+	for _, source := range sources {
+		groups, err := source.group(source.path)
+		if err != nil {
+			log.Fatal().Err(err).Str("source", source.name).Msg("failed to group files by date")
+		}
+		switch {
+		case source.rsyncOnly && !rsyncConfigured():
+			log.Warn().Str("source", source.name).Msg("skipping: needs rsync, but host and remote_path are not configured")
+			continue
+		case source.rsyncOnly, !immichConfigured() && rsyncConfigured():
+			rsyncByDate(groups)
+		case immichConfigured():
+			uploadByDate(groups)
+			uploaded = true
+		default:
+			log.Fatal().Msg("configure either server + key (Immich API) or host + remote_path (rsync)")
+		}
+		transferred = append(transferred, source)
+	}
+	if len(transferred) == 0 {
+		log.Warn().Msg("nothing was transferred")
 	}
 
-	var cleaned bool
-	if job.flatCleanup {
-		cleaned = promptAndCleanupFlat()
-	} else {
-		cleaned = promptAndCleanup()
-	}
-	if cleaned && job.clearSonyIndex {
+	if promptAndCleanup(transferred) && layout.clearSonyIndex {
 		cleanupSonyCardIndex(directory)
 	}
 
 	unmountDrive()
 
-	if !job.rsyncOnly && immichKey != "" && immichServer != "" && immichLibrary != "" {
+	if uploaded && immichLibrary != "" {
 		triggerSync()
 	}
 }
@@ -300,11 +215,11 @@ func runVersion(cmd *cobra.Command, args []string) {
 }
 
 func runSyncCmd(cmd *cobra.Command, args []string) {
-	if immichKey == "" {
-		log.Fatal().Msg("provide --key or set IMMICH_API_KEY")
+	if !immichConfigured() {
+		log.Fatal().Msg("provide --server and --key, or set IMMICH_SERVER and IMMICH_API_KEY")
 	}
-	if immichServer == "" {
-		log.Fatal().Msg("provide --server or set IMMICH_SERVER")
+	if immichLibrary == "" {
+		log.Fatal().Msg("provide --library")
 	}
 	triggerSync()
 }

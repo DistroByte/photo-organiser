@@ -44,23 +44,34 @@ func cleanupFlatSourceFiles(sourceDir string) error {
 	return nil
 }
 
-func promptAndCleanup() bool {
+// promptAndCleanup asks once, then clears every transferred source. It reports
+// whether anything was removed so the caller can clear camera index files too.
+func promptAndCleanup(sources []activeSource) bool {
+	if len(sources) == 0 {
+		return false
+	}
 	if dryRun {
 		log.Info().Msg("Dry run complete. No files were actually moved or deleted.")
 		return false
 	}
 	reader := bufio.NewReader(os.Stdin)
-	fmt.Print("Cleanup source directories? [y/N]: ")
+	fmt.Print("Cleanup source files? [y/N]: ")
 	input, _ := reader.ReadString('\n')
-	if len(input) > 0 && (input[0] == 'y' || input[0] == 'Y') {
-		if err := cleanupSourceDirs(sourceDir); err != nil {
-			log.Fatal().Err(err).Msg("failed to cleanup source directories")
-		}
-		log.Info().Msg("Source directories cleaned up.")
-		return true
+	if len(input) == 0 || (input[0] != 'y' && input[0] != 'Y') {
+		log.Info().Msg("Skipping cleanup of source files.")
+		return false
 	}
-	log.Info().Msg("Skipping cleanup of source directories.")
-	return false
+	for _, source := range sources {
+		cleanup := cleanupSourceDirs
+		if source.flatCleanup {
+			cleanup = cleanupFlatSourceFiles
+		}
+		if err := cleanup(source.path); err != nil {
+			log.Fatal().Err(err).Str("source", source.name).Msg("failed to cleanup source files")
+		}
+	}
+	log.Info().Msg("Source files cleaned up.")
+	return true
 }
 
 // cleanupSonyCardIndex removes the Sony card ownership index and the auto-image
@@ -77,23 +88,4 @@ func cleanupSonyCardIndex(cardRoot string) {
 		}
 	}
 	log.Info().Msg("Sony card index cleared.")
-}
-
-func promptAndCleanupFlat() bool {
-	if dryRun {
-		log.Info().Msg("Dry run complete. No files were actually moved or deleted.")
-		return false
-	}
-	reader := bufio.NewReader(os.Stdin)
-	fmt.Print("Cleanup source files? [y/N]: ")
-	input, _ := reader.ReadString('\n')
-	if len(input) > 0 && (input[0] == 'y' || input[0] == 'Y') {
-		if err := cleanupFlatSourceFiles(sourceDir); err != nil {
-			log.Fatal().Err(err).Msg("failed to cleanup source files")
-		}
-		log.Info().Msg("Source files cleaned up.")
-		return true
-	}
-	log.Info().Msg("Skipping cleanup of source files.")
-	return false
 }
