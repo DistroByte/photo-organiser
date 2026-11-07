@@ -14,6 +14,7 @@ override environment variables, which override the file.
 Available Commands:
 
 	init        Write the config file, prompting for each setting
+	stack       Run immich-stack against the configured Immich server
 	sync        Trigger an immich library scan
 	update      Update photo-organiser to the latest release
 	version     Print version information
@@ -32,6 +33,7 @@ Flags:
 	    --host string          remote host for rsync
 	    --user string          remote user for rsync (default "$USER")
 	    --remote-path string   remote destination path for rsync
+	    --stack-binary string  immich-stack binary, for the stack command (default "immich-stack")
 	-v, --verbose              enable debug logging
 	-n, --dry-run              will not move files, copy them to the remote, or cleanup source directories
 */
@@ -87,6 +89,7 @@ var (
 	immichLibrary string
 	immichKey     string
 	immichServer  string
+	stackBinary   string
 )
 
 type ImmichError struct {
@@ -115,7 +118,7 @@ Run "photo-organiser init" once to write the config file; after that a plain
 		Args: cobra.NoArgs,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			configureLogging()
-			return applyConfig(cmd.Flags(), configPath)
+			return applyConfig(cmd.Root().PersistentFlags(), configPath)
 		},
 		Run: runImport,
 	}
@@ -135,12 +138,14 @@ Run "photo-organiser init" once to write the config file; after that a plain
 	flags.StringVar(&remoteHost, "host", "", "remote host for rsync")
 	flags.StringVar(&remoteUser, "user", os.Getenv("USER"), "remote user for rsync")
 	flags.StringVar(&remotePath, "remote-path", "", "remote destination path for rsync")
+	flags.StringVar(&stackBinary, "stack-binary", "immich-stack", "immich-stack binary, for the stack command")
 	flags.BoolVarP(&verbose, "verbose", "v", false, "enable debug logging")
 	flags.BoolVarP(&dryRun, "dry-run", "n", false, "will not move files, copy them to the remote, or cleanup source directories")
 	flags.SortFlags = false
 
 	rootCmd.AddCommand(
 		newInitCmd(),
+		newStackCmd(),
 		&cobra.Command{Use: "sync", Short: "Trigger an immich library scan", Args: cobra.NoArgs, Run: runSyncCmd},
 		&cobra.Command{Use: "version", Short: "Print version information", Args: cobra.NoArgs, Run: runVersion},
 		&cobra.Command{Use: "update", Short: "Update photo-organiser to the latest release", Args: cobra.NoArgs, Run: runUpdate},

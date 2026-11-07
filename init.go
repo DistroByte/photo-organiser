@@ -18,7 +18,7 @@ func newInitCmd() *cobra.Command {
 		// must not stop init from replacing it.
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			configureLogging()
-			if err := applyConfig(cmd.Flags(), configPath); err != nil {
+			if err := applyConfig(cmd.Root().PersistentFlags(), configPath); err != nil {
 				log.Warn().Err(err).Msg("ignoring existing config")
 			}
 		},

@@ -38,6 +38,7 @@ var configEntries = []configEntry{
 	{key: "device", flag: "device", prompt: "card device to mount"},
 	{key: "directory", flag: "directory", prompt: "mount point"},
 	{key: "mount_type", flag: "mount-type", prompt: "filesystem type (empty skips mounting)"},
+	{key: "stack_binary", flag: "stack-binary", prompt: "immich-stack binary (path or name on PATH)"},
 }
 
 // defaultConfigPath follows the XDG convention on every platform. os.UserConfigDir

@@ -43,6 +43,7 @@ remote_path = "/volume1/photos"
 device = "/dev/sdd1"
 directory = "/dev/camera"
 mount_type = "exfat"
+stack_binary = "~/personal/immich-stack/immich-stack"
 ```
 
 Set `server` and `key` to upload to Immich, or `host` and `remote_path` to rsync over SSH. If both are set, photos go to Immich. Sony video clips always go over rsync, since they carry XML sidecars Immich does not accept.
@@ -57,6 +58,37 @@ photo-organiser -n         # dry run: show what would happen, change nothing
 photo-organiser --camera sony   # skip detection
 photo-organiser sync       # trigger an Immich library scan
 ```
+
+### immich-stack
+
+`photo-organiser stack` runs [immich-stack](https://github.com/Majorfi/immich-stack) with the configured server and API key, so stacking shares the same credentials as uploads. Every argument is passed through:
+
+```
+photo-organiser stack --dry-run
+photo-organiser stack duplicates
+photo-organiser stack fix-trash --trash-orphaned-raws
+```
+
+Set `stack_binary` to the binary's path if it is not on `PATH`.
+
+#### Installing immich-stack
+
+`go install github.com/majorfi/immich-stack/cmd@latest` names the binary after its package directory, so you end up with a command called `cmd`. Either build it from a clone:
+
+```
+git clone https://github.com/Majorfi/immich-stack.git
+cd immich-stack
+go build -o ~/.local/bin/immich-stack ./cmd
+```
+
+or install it and rename the result:
+
+```
+go install github.com/majorfi/immich-stack/cmd@latest
+mv "$(go env GOPATH)/bin/cmd" "$(go env GOPATH)/bin/immich-stack"
+```
+
+Upstream's release archives, when published, already contain a binary called `immich-stack`. Whichever route you take, make sure the directory is on `PATH` or point `stack_binary` at the file.
 
 Set `mount_type = ""` to skip mounting and point `directory` at a card that is already mounted.
 
@@ -75,6 +107,7 @@ Set `mount_type = ""` to skip mounting and point `directory` at a card that is a
       --host string          remote host for rsync
       --user string          remote user for rsync (default "$USER")
       --remote-path string   remote destination path for rsync
+      --stack-binary string  immich-stack binary, for the stack command (default "immich-stack")
   -v, --verbose              enable debug logging
   -n, --dry-run              will not move files, copy them to the remote, or cleanup source directories
 ```

@@ -180,7 +180,7 @@ host = "nas"
 	if err := cmd.ParseFlags([]string{"--host", "flag-host"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := applyConfig(cmd.Flags(), path); err != nil {
+	if err := applyConfig(cmd.PersistentFlags(), path); err != nil {
 		t.Fatal(err)
 	}
 
@@ -204,7 +204,7 @@ func TestApplyConfigRejectsBrokenFile(t *testing.T) {
 	writeFile(t, path, "[broken", noonUTC(2026, 1, 1))
 
 	cmd := newRootCmd()
-	if err := applyConfig(cmd.Flags(), path); err == nil {
+	if err := applyConfig(cmd.PersistentFlags(), path); err == nil {
 		t.Fatal("expected a parse error")
 	}
 }
