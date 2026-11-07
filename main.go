@@ -7,8 +7,13 @@ the usual invocation is just:
 
 	photo-organiser
 
+Settings that never change between runs live in a config file written by
+"photo-organiser init" (default ~/.config/photo-organiser/config.toml). Flags
+override environment variables, which override the file.
+
 Available Commands:
 
+	init        Write the config file, prompting for each setting
 	sync        Trigger an immich library scan
 	update      Update photo-organiser to the latest release
 	version     Print version information
@@ -17,6 +22,7 @@ Flags:
 
 	-s, --source string        source directory, overriding the layout's default
 	    --camera string        card layout to assume instead of detecting it (sony, dji, canon, charmera)
+	    --config string        config file (default ~/.config/photo-organiser/config.toml)
 	    --device string        device to mount (default "/dev/sdd1")
 	    --directory string     mount point (default "/dev/camera")
 	    --mount-type string    filesystem type for mounting; empty skips mounting (default "exfat")
@@ -67,6 +73,7 @@ func newHTTPClient(responseHeaderTimeout time.Duration) *http.Client {
 }
 
 var (
+	configPath    string
 	sourceDir     string
 	cameraName    string
 	dryRun        bool
@@ -103,10 +110,14 @@ func newRootCmd() *cobra.Command {
 were taken, and sends each day to Immich or to a remote directory over rsync.
 It recognises Sony, DJI, Canon and Kodak Charmera cards on its own.
 
-A plain "photo-organiser" imports whatever card is plugged in.`,
-		Args:             cobra.NoArgs,
-		PersistentPreRun: func(cmd *cobra.Command, args []string) { configureLogging() },
-		Run:              runImport,
+Run "photo-organiser init" once to write the config file; after that a plain
+"photo-organiser" imports whatever card is plugged in.`,
+		Args: cobra.NoArgs,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			configureLogging()
+			return applyConfig(cmd.Flags(), configPath)
+		},
+		Run: runImport,
 	}
 
 	rootCmd.Flags().StringVarP(&sourceDir, "source", "s", "", "source directory, overriding the layout's default")
@@ -114,11 +125,12 @@ A plain "photo-organiser" imports whatever card is plugged in.`,
 	rootCmd.Flags().SortFlags = false
 
 	flags := rootCmd.PersistentFlags()
+	flags.StringVar(&configPath, "config", defaultConfigPath(), "config file")
 	flags.StringVar(&device, "device", "/dev/sdd1", "device to mount")
 	flags.StringVar(&directory, "directory", "/dev/camera", "mount point")
 	flags.StringVar(&mountType, "mount-type", "exfat", "filesystem type for mounting; empty skips mounting")
-	flags.StringVar(&immichServer, "server", os.Getenv("IMMICH_SERVER"), "immich api base url, e.g. https://immich.local/api (env: IMMICH_SERVER)")
-	flags.StringVar(&immichKey, "key", os.Getenv("IMMICH_API_KEY"), "immich api key (env: IMMICH_API_KEY)")
+	flags.StringVar(&immichServer, "server", "", "immich api base url, e.g. https://immich.local/api (env: IMMICH_SERVER)")
+	flags.StringVar(&immichKey, "key", "", "immich api key (env: IMMICH_API_KEY)")
 	flags.StringVar(&immichLibrary, "library", "", "immich library to scan after uploading")
 	flags.StringVar(&remoteHost, "host", "", "remote host for rsync")
 	flags.StringVar(&remoteUser, "user", os.Getenv("USER"), "remote user for rsync")
@@ -128,6 +140,7 @@ A plain "photo-organiser" imports whatever card is plugged in.`,
 	flags.SortFlags = false
 
 	rootCmd.AddCommand(
+		newInitCmd(),
 		&cobra.Command{Use: "sync", Short: "Trigger an immich library scan", Args: cobra.NoArgs, Run: runSyncCmd},
 		&cobra.Command{Use: "version", Short: "Print version information", Args: cobra.NoArgs, Run: runVersion},
 		&cobra.Command{Use: "update", Short: "Update photo-organiser to the latest release", Args: cobra.NoArgs, Run: runUpdate},
@@ -181,7 +194,7 @@ func runImport(cmd *cobra.Command, args []string) {
 			uploadByDate(groups)
 			uploaded = true
 		default:
-			log.Fatal().Msg("configure either server + key (Immich API) or host + remote_path (rsync)")
+			log.Fatal().Msg("configure either server + key (Immich API) or host + remote_path (rsync); see photo-organiser init")
 		}
 		transferred = append(transferred, source)
 	}
@@ -216,10 +229,10 @@ func runVersion(cmd *cobra.Command, args []string) {
 
 func runSyncCmd(cmd *cobra.Command, args []string) {
 	if !immichConfigured() {
-		log.Fatal().Msg("provide --server and --key, or set IMMICH_SERVER and IMMICH_API_KEY")
+		log.Fatal().Msg("provide --server and --key, or set them in the config file")
 	}
 	if immichLibrary == "" {
-		log.Fatal().Msg("provide --library")
+		log.Fatal().Msg("provide --library, or set it in the config file")
 	}
 	triggerSync()
 }
