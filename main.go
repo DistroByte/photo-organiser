@@ -53,15 +53,24 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// httpClient is shared by every network call. It bounds connection setup and the
-// wait for response headers without capping total transfer time, so large uploads
-// and downloads still succeed while a dead server or stalled connection fails fast.
-var httpClient = &http.Client{
-	Transport: &http.Transport{
-		DialContext:           (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ResponseHeaderTimeout: 30 * time.Second,
-	},
+// httpClient serves control-plane calls. It bounds connection setup and the wait
+// for response headers without capping total transfer time, so large downloads
+// still succeed while a dead server or stalled connection fails fast.
+var httpClient = newHTTPClient(30 * time.Second)
+
+// uploadClient is far more patient about response headers: Immich hashes and
+// stores a 40MB RAW before it replies, which routinely outlasts the
+// control-plane budget on a loaded server.
+var uploadClient = newHTTPClient(5 * time.Minute)
+
+func newHTTPClient(responseHeaderTimeout time.Duration) *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			DialContext:           (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ResponseHeaderTimeout: responseHeaderTimeout,
+		},
+	}
 }
 
 var (

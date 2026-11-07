@@ -316,6 +316,121 @@ func TestGroupCanonByDate(t *testing.T) {
 	}
 }
 
+// TestSystemFilesExcluded covers the macOS artefacts that appear on an exFAT
+// card after it has been mounted on a Mac. AppleDouble stubs are the dangerous
+// case: "._X.JPG" sorts before "X.JPG", so an unfiltered scan dates a whole
+// folder from the stub's mtime and uploads the stub to Immich as an asset.
+func TestSystemFilesExcluded(t *testing.T) {
+	t.Run("sonyFolderDate ignores AppleDouble stubs", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFile(t, filepath.Join(dir, "._A6706120.JPG"), "applesingle", noonUTC(2019, time.December, 31))
+		writeFile(t, filepath.Join(dir, "A6706120.JPG"), "photo", noonUTC(2025, time.March, 3))
+
+		got, err := sonyFolderDate(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != "2025-03-03" {
+			t.Errorf("sonyFolderDate = %s, want 2025-03-03 (dated from the stub, not the photo)", got)
+		}
+	})
+
+	t.Run("uploadableFiles skips system files", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFile(t, filepath.Join(dir, "._A6706120.JPG"), "applesingle", time.Time{})
+		writeFile(t, filepath.Join(dir, ".DS_Store"), "junk", time.Time{})
+		writeFile(t, filepath.Join(dir, "A6706120.JPG"), "photo", time.Time{})
+		writeFile(t, filepath.Join(dir, "sub", "nested.JPG"), "photo", time.Time{})
+
+		files, err := uploadableFiles(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !equalStrings(files, []string{"A6706120.JPG"}) {
+			t.Errorf("uploadableFiles = %v, want [A6706120.JPG]", files)
+		}
+	})
+
+	t.Run("groupCharmeraByDate skips AppleDouble stubs", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFile(t, filepath.Join(dir, "._img1.jpg"), "applesingle", noonUTC(2025, time.February, 1))
+		writeFile(t, filepath.Join(dir, "img1.jpg"), "p", noonUTC(2025, time.February, 1))
+
+		groups, err := groupCharmeraByDate(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := groupsByDate(groups)
+		if !equalStrings(got["2025-02-01"], []string{"img1.jpg"}) {
+			t.Errorf("got %v, want [img1.jpg]", got["2025-02-01"])
+		}
+	})
+
+	t.Run("groupCanonByDate skips system files and directories", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFile(t, filepath.Join(dir, "100CANON", "._IMG_0001.JPG"), "applesingle", noonUTC(2025, time.April, 10))
+		writeFile(t, filepath.Join(dir, "100CANON", "IMG_0001.JPG"), "p", noonUTC(2025, time.April, 10))
+		writeFile(t, filepath.Join(dir, ".Spotlight-V100", "index"), "junk", noonUTC(2025, time.April, 10))
+
+		groups, err := groupCanonByDate(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := groupsByDate(groups)
+		if len(got) != 1 {
+			t.Fatalf("got %d groups, want 1: %v", len(got), got)
+		}
+		if !equalStrings(got["2025-04-10"], []string{"IMG_0001.JPG"}) {
+			t.Errorf("got %v, want [IMG_0001.JPG]", got["2025-04-10"])
+		}
+	})
+
+	t.Run("groupSonyVideosByDate skips AppleDouble stubs", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFile(t, filepath.Join(dir, "._C0001.MP4"), "applesingle", noonUTC(2019, time.December, 31))
+		writeFile(t, filepath.Join(dir, "C0001.MP4"), "v", noonUTC(2024, time.August, 9))
+
+		groups, err := groupSonyVideosByDate(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := groupsByDate(groups)
+		if len(got) != 1 {
+			t.Fatalf("got %d groups, want 1: %v", len(got), got)
+		}
+		if !equalStrings(got["2024-08-09"], []string{"C0001.MP4"}) {
+			t.Errorf("got %v, want [C0001.MP4]", got["2024-08-09"])
+		}
+	})
+
+	t.Run("groupDJIByDate skips AppleDouble stubs", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFile(t, filepath.Join(dir, "._DJI_20230715093000_0001_D.MP4"), "applesingle", time.Time{})
+		writeFile(t, filepath.Join(dir, "DJI_20230715093000_0001_D.MP4"), "v", time.Time{})
+
+		groups, err := groupDJIByDate(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := groupsByDate(groups)
+		if !equalStrings(got["2023-07-15"], []string{"DJI_20230715093000_0001_D.MP4"}) {
+			t.Errorf("got %v, want [DJI_20230715093000_0001_D.MP4]", got["2023-07-15"])
+		}
+	})
+
+	t.Run("rsync excludes dot-prefixed names", func(t *testing.T) {
+		var found bool
+		for _, arg := range baseRsyncArgs() {
+			if arg == "--exclude=.*" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("baseRsyncArgs() = %v, want it to contain --exclude=.*", baseRsyncArgs())
+		}
+	})
+}
+
 func equalStrings(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

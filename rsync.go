@@ -68,6 +68,8 @@ func baseRsyncArgs() []string {
 	return append([]string{
 		"--rsync-path=/bin/rsync",
 		"--ignore-existing",
+		// Leave macOS's AppleDouble stubs and index files on the card; see isSystemFile.
+		"--exclude=.*",
 		"--info=none,progress2",
 		"--chmod=ugo=rwX",
 	}, flags...)

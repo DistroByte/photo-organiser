@@ -19,6 +19,15 @@ var isoDateRegex = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
 var videoExtensions = map[string]bool{".mp4": true, ".mov": true}
 var creationDateRegex = regexp.MustCompile(`<CreationDate value="(\d{4}-\d{2}-\d{2})`)
 
+// isSystemFile reports whether a name is a filesystem artefact rather than
+// camera output. macOS scatters these across an exFAT card whenever it is
+// mounted: AppleDouble resource-fork stubs ("._A6706120.JPG"), .DS_Store,
+// .Spotlight-V100, .Trashes, .fseventsd. No camera writes a dot-prefixed name,
+// so the leading dot is enough to identify them all.
+func isSystemFile(name string) bool {
+	return strings.HasPrefix(name, ".")
+}
+
 // dateGroup holds the rsync source and file list for one date's worth of photos.
 type dateGroup struct {
 	sourceDir string   // absolute path used as the rsync source root
@@ -59,7 +68,7 @@ func sonyFolderDate(dirPath string) (string, error) {
 		return "", err
 	}
 	for _, entry := range entries {
-		if entry.IsDir() {
+		if entry.IsDir() || isSystemFile(entry.Name()) {
 			continue
 		}
 		taken, err := photoDate(filepath.Join(dirPath, entry.Name()))
@@ -110,10 +119,13 @@ func groupCanonByDate(sourceDir string) ([]dateGroup, error) {
 			return err
 		}
 
-		if d.IsDir() && isoDateRegex.MatchString(filepath.Base(rel)) {
+		if d.IsDir() && (isoDateRegex.MatchString(filepath.Base(rel)) || isSystemFile(d.Name())) {
 			return fs.SkipDir
 		}
 		if d.IsDir() {
+			return nil
+		}
+		if isSystemFile(d.Name()) {
 			return nil
 		}
 
@@ -164,6 +176,9 @@ func groupCharmeraByDate(sourceDir string) ([]dateGroup, error) {
 			continue
 		}
 		name := entry.Name()
+		if isSystemFile(name) {
+			continue
+		}
 		ext := strings.ToLower(filepath.Ext(name))
 		if ext != ".jpg" && ext != ".jpeg" && ext != ".avi" {
 			continue
@@ -252,7 +267,7 @@ func groupSonyVideosByDate(sourceDir string) ([]dateGroup, error) {
 			continue
 		}
 		name := entry.Name()
-		if !videoExtensions[strings.ToLower(filepath.Ext(name))] {
+		if isSystemFile(name) || !videoExtensions[strings.ToLower(filepath.Ext(name))] {
 			continue
 		}
 		base := strings.TrimSuffix(name, filepath.Ext(name))
