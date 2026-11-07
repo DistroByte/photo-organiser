@@ -73,44 +73,17 @@ Set `stack_binary` to the binary's path if it is not on `PATH`.
 
 #### Installing immich-stack
 
-`go install github.com/majorfi/immich-stack/cmd@latest` names the binary after its package directory, so you end up with a command called `cmd`. Either build it from a clone:
+The simplest route is a [release archive](https://github.com/Majorfi/immich-stack/releases/latest), which contains a binary already named `immich-stack`:
 
 ```
-git clone https://github.com/Majorfi/immich-stack.git
-cd immich-stack
-go build -o ~/.local/bin/immich-stack ./cmd
+curl -sL https://github.com/Majorfi/immich-stack/releases/latest/download/immich-stack_Darwin_arm64.tar.gz | tar -xz -C ~/.local/bin immich-stack
 ```
 
-or install it and rename the result:
+Swap `Darwin_arm64` for `Linux_x86_64`, `Linux_arm64` or `Darwin_x86_64` as needed.
 
-```
-go install github.com/majorfi/immich-stack/cmd@latest
-mv "$(go env GOPATH)/bin/cmd" "$(go env GOPATH)/bin/immich-stack"
-```
+Avoid `go install github.com/majorfi/immich-stack/cmd@latest`: it names the binary after its package directory, so you end up with a command called `cmd`. If you want to build from source instead, clone the repo and run `go build -o ~/.local/bin/immich-stack ./cmd`.
 
-Upstream's release archives, when published, already contain a binary called `immich-stack`. Whichever route you take, make sure the directory is on `PATH` or point `stack_binary` at the file.
-
-Set `mount_type = ""` to skip mounting and point `directory` at a card that is already mounted.
-
-### Flags
-
-```
-  -s, --source string        source directory, overriding the layout's default
-      --camera string        card layout to assume instead of detecting it (sony, dji, canon, charmera)
-      --config string        config file (default ~/.config/photo-organiser/config.toml)
-      --device string        device to mount (default "/dev/sdd1")
-      --directory string     mount point (default "/dev/camera")
-      --mount-type string    filesystem type for mounting; empty skips mounting (default "exfat")
-      --server string        immich api base url, e.g. https://immich.local/api (env: IMMICH_SERVER)
-      --key string           immich api key (env: IMMICH_API_KEY)
-      --library string       immich library to scan after uploading
-      --host string          remote host for rsync
-      --user string          remote user for rsync (default "$USER")
-      --remote-path string   remote destination path for rsync
-      --stack-binary string  immich-stack binary, for the stack command (default "immich-stack")
-  -v, --verbose              enable debug logging
-  -n, --dry-run              will not move files, copy them to the remote, or cleanup source directories
-```
+Whichever route you take, make sure the directory is on `PATH` or point `stack_binary` at the file.
 
 ## License
 
